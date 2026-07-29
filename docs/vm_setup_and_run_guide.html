@@ -1,0 +1,204 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>VM Setup &amp; Run Guide — ROS2 + Gazebo</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #0b0d12;
+    --panel: #12151c;
+    --border: #262b36;
+    --text: #e6e8ec;
+    --muted: #9aa3b2;
+    --accent: #ff8a3d;
+    --ok: #35d17a;
+    --bad: #ff5d5d;
+    --code-bg: #1a1e27;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    padding: 2.5rem 1.5rem 5rem;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.55;
+  }
+  .wrap { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin-bottom: 0.2rem; }
+  .subtitle { color: var(--muted); margin-top: 0; margin-bottom: 2.2rem; }
+  h2 { font-size: 1.15rem; margin-top: 2.6rem; display: flex; align-items: center; gap: 0.6rem; }
+  h3 { font-size: 1rem; margin-top: 1.6rem; color: var(--accent); }
+  .step-num {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 1.8rem; height: 1.8rem; border-radius: 50%;
+    background: var(--accent); color: #1a0f04; font-weight: 700; font-size: 0.95rem;
+    flex-shrink: 0;
+  }
+  p { color: var(--text); }
+  .card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.1rem 1.3rem;
+    margin: 0.9rem 0;
+  }
+  code, pre {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.86rem;
+  }
+  code { background: var(--code-bg); padding: 0.15rem 0.4rem; border-radius: 4px; }
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.9rem 1rem;
+    overflow-x: auto;
+    margin: 0.6rem 0;
+    white-space: pre-wrap;
+  }
+  .expect {
+    border-left: 3px solid var(--ok);
+    padding: 0.6rem 0.9rem;
+    background: rgba(53, 209, 122, 0.08);
+    border-radius: 0 6px 6px 0;
+    margin-top: 0.7rem;
+  }
+  .expect b { color: var(--ok); }
+  .warn {
+    border-left: 3px solid var(--bad);
+    padding: 0.6rem 0.9rem;
+    background: rgba(255, 93, 93, 0.08);
+    border-radius: 0 6px 6px 0;
+    margin-top: 0.7rem;
+  }
+  .warn b { color: var(--bad); }
+  .note {
+    border-left: 3px solid var(--muted);
+    padding: 0.6rem 0.9rem;
+    background: rgba(154, 163, 178, 0.08);
+    border-radius: 0 6px 6px 0;
+    margin-top: 0.7rem;
+    font-size: 0.92rem;
+    color: var(--muted);
+  }
+  ul, ol { padding-left: 1.3rem; }
+  li { margin-bottom: 0.4rem; }
+  table { width: 100%; border-collapse: collapse; margin: 0.8rem 0; }
+  td, th { border: 1px solid var(--border); padding: 0.5rem 0.7rem; text-align: left; font-size: 0.9rem; }
+  th { color: var(--muted); font-weight: 600; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 2.5rem 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Running the Full Stack on a Virtual Machine</h1>
+  <p class="subtitle">ROS2 Jazzy + Gazebo Harmonic need Linux. This walks through setting up a VM and running this repo's own install scripts in it — nothing new invented, just <code>scripts/*.sh</code> already in the repo, in the right order.</p>
+
+  <div class="note">Why a VM at all: this repo's Windows checkout can't run <code>colcon build</code> or launch Gazebo directly — those need Ubuntu. A VM (or WSL2, or dual-boot) is the way to get a real Linux environment. Earlier project backups in this repo's history reference a VirtualBox user (<code>vboxuser</code>), so VirtualBox is what this project has used before — this guide follows that.</div>
+
+  <h2><span class="step-num">1</span> Install VirtualBox &amp; create the VM</h2>
+  <div class="card">
+    <ol>
+      <li>Install <a href="https://www.virtualbox.org/wiki/Downloads">VirtualBox</a> (and the Extension Pack) if not already installed.</li>
+      <li>Download <b>Ubuntu 24.04 LTS "Noble Numbat"</b> desktop ISO — this is the OS version ROS2 Jazzy and the repo's install scripts target (<code>scripts/setup_ros2_repo.sh</code> explicitly adds the <code>noble</code> ROS2 apt repo).</li>
+      <li>Create a new VM: <b>Type</b> Linux, <b>Version</b> Ubuntu (64-bit).</li>
+      <li>Give it real resources — Gazebo is not lightweight:
+        <table>
+          <tr><th>Resource</th><th>Minimum</th><th>Recommended</th></tr>
+          <tr><td>RAM</td><td>4 GB</td><td>8 GB+</td></tr>
+          <tr><td>CPU cores</td><td>2</td><td>4+</td></tr>
+          <tr><td>Disk</td><td>25 GB</td><td>40 GB+</td></tr>
+        </table>
+      </li>
+      <li>In the VM's <b>Display</b> settings, set <b>Video Memory</b> to the max (128 MB) and enable <b>3D Acceleration</b> — needed if you want the actual Gazebo GUI window rather than headless mode.</li>
+      <li>Install Ubuntu normally, then install <b>Guest Additions</b> (VirtualBox menu: <i>Devices → Insert Guest Additions CD</i>) for better display/clipboard/shared-folder support.</li>
+    </ol>
+  </div>
+
+  <h2><span class="step-num">2</span> Get the repo onto the VM</h2>
+  <div class="card">
+    <p>Inside the Ubuntu VM, open a terminal:</p>
+    <pre>sudo apt-get update
+sudo apt-get install -y git
+git clone https://github.com/rakshithachannakeshav/lunar-rover-quantum.git ~/lunar-rover-quantum
+cd ~/lunar-rover-quantum</pre>
+    <div class="note">The repo root <i>is</i> the ROS2 workspace now — <code>src/</code> sits directly at the repo root, there's no separate <code>lunar_rover_ws/</code> subfolder to <code>cd</code> into. Every path below assumes you're standing in <code>~/lunar-rover-quantum</code>.</div>
+  </div>
+
+  <h2><span class="step-num">3</span> Run the install scripts, in order</h2>
+  <div class="card">
+    <p>These already exist in <code>scripts/</code> — just run them one at a time. Each does real <code>apt-get</code> work and will take several minutes; read each one first if you want to know exactly what it does.</p>
+    <pre>chmod +x scripts/*.sh
+
+# 1. ROS2 apt repo + locale setup
+bash scripts/setup_ros2_repo.sh
+
+# 2. ROS2 Jazzy desktop + colcon + rosdep
+bash scripts/install_ros2_jazzy.sh
+
+# 3. Gazebo Harmonic + ros_gz bridge
+bash scripts/install_gazebo_harmonic.sh
+
+# 4. Extra simulation deps (xacro, rviz2, nav2, teleop, tf tools...)
+bash scripts/install_sim_dependencies.sh
+
+# 5. Python + Qiskit/quantum stack (creates a venv)
+bash scripts/install_python_quantum.sh</pre>
+    <div class="warn"><b>Heads up:</b> <code>install_ros2_jazzy.sh</code> and <code>install_python_quantum.sh</code> hardcode <code>/home/monis/.bashrc</code> (a specific person's username from before this repo was reorganized) instead of your actual home directory. If your VM user isn't named <code>monis</code>, those specific "add sourcing to .bashrc" lines will silently do nothing — harmless, but it means new terminals won't auto-source ROS2. Just run <code>source /opt/ros/jazzy/setup.bash</code> manually each new terminal, or fix that one line yourself if it bothers you.</div>
+  </div>
+
+  <h2><span class="step-num">4</span> Build the workspace</h2>
+  <div class="card">
+    <pre>source /opt/ros/jazzy/setup.bash
+cd ~/lunar-rover-quantum
+colcon build --symlink-install</pre>
+    <div class="expect"><b>Expect:</b> colcon reports building <code>evaluation_pkg</code>, <code>mapping_pkg</code>, <code>navigation_pkg</code>, <code>planning_pkg</code>, <code>rover_simulation</code>, <code>sensor_pkg</code> — all should say <b>Finished</b>, none <b>Failed</b>. The four scaffolding packages (mapping/planning/navigation/evaluation) have no real nodes yet, so they'll build near-instantly since there's nothing to compile.</div>
+  </div>
+
+  <h2><span class="step-num">5</span> Launch the simulation</h2>
+  <div class="card">
+    <pre>source install/setup.bash
+ros2 launch rover_simulation simulation_launch.py</pre>
+    <div class="expect"><b>Expect:</b> Gazebo starts <i>headless</i> by default (no window) — this is intentional, see the comment at the top of <code>src/rover_simulation/launch/simulation_launch.py</code>. You'll see log lines and a reminder on how to attach a GUI or RViz.</div>
+    <p>To see something visually, either:</p>
+    <ul>
+      <li><b>Attach the Gazebo GUI</b> (needs 3D acceleration working) — in a second terminal: <code>bash scripts/open_gazebo_gui.sh</code></li>
+      <li><b>Or use RViz instead</b> (usually more VM-friendly than Gazebo's own renderer):
+        <pre>ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true</pre>
+      </li>
+    </ul>
+    <div class="note">If the Gazebo GUI crashes or the window stays black, that's almost always a 3D-acceleration problem in the VM, not a bug in the code — RViz is the fallback path and is what the scripts' own comments recommend when running under a VM/WSL.</div>
+  </div>
+
+  <h2><span class="step-num">6</span> Sanity-check it's actually running</h2>
+  <div class="card">
+    <p>In another terminal (remember to <code>source install/setup.bash</code> in every new terminal):</p>
+    <pre>ros2 topic list
+ros2 topic echo /odom --field pose.pose.position</pre>
+    <div class="expect"><b>Expect:</b> <code>/odom</code>, <code>/cmd_vel</code>, <code>/scan</code>, <code>/imu/data</code>, <code>/joint_states</code>, <code>/tf</code> among the topics; the odom echo prints a position that changes if you drive the rover (see below).</div>
+    <p>Drive it manually:</p>
+    <pre>ros2 run rover_simulation rover_keyboard.py</pre>
+    <p>Or run the sensor nodes (separately, this is <code>sensor_pkg</code>, not <code>rover_simulation</code>):</p>
+    <pre>ros2 launch sensor_pkg sensors_launch.py</pre>
+  </div>
+
+  <hr>
+
+  <h2>Quick troubleshooting reference</h2>
+  <div class="card">
+    <table>
+      <tr><th>Symptom</th><th>Likely cause</th></tr>
+      <tr><td><code>gz sim --version</code> fails</td><td>Gazebo install step didn't complete — re-run <code>install_gazebo_harmonic.sh</code></td></tr>
+      <tr><td>colcon build fails on a specific package</td><td>Missing rosdep — try <code>rosdep install --from-paths src --ignore-src -r -y</code> from the repo root</td></tr>
+      <tr><td>Gazebo GUI window is black/crashes</td><td>3D acceleration not working in the VM — use RViz instead (Step 5)</td></tr>
+      <tr><td><code>ros2: command not found</code></td><td>Forgot to <code>source /opt/ros/jazzy/setup.bash</code> in this terminal</td></tr>
+      <tr><td>Package not found after build</td><td>Forgot to <code>source install/setup.bash</code> (separate from the ROS2 system source)</td></tr>
+    </table>
+  </div>
+
+</div>
+</body>
+</html>

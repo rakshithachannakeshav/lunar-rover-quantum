@@ -4,7 +4,7 @@
 
 set -e
 source /opt/ros/jazzy/setup.bash
-WS=~/lunar-rover-quantum/lunar_rover_ws
+WS=~/lunar-rover-quantum
 source "$WS/install/setup.bash"
 PKG="$WS/install/rover_simulation/share/rover_simulation"
 export GZ_SIM_RESOURCE_PATH="$PKG/worlds:$PKG/models"

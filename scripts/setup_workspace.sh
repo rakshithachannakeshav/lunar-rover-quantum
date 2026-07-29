@@ -5,7 +5,7 @@ echo "=== PHASE F: ROS2 WORKSPACE SETUP ==="
 
 # Step 1: Create workspace structure
 echo "--- Step 1: Creating workspace directory structure ---"
-WS_ROOT=~/lunar-rover-quantum/lunar_rover_ws
+WS_ROOT=~/lunar-rover-quantum
 mkdir -p $WS_ROOT/src/rover_simulation/urdf
 mkdir -p $WS_ROOT/src/rover_simulation/worlds
 mkdir -p $WS_ROOT/src/rover_simulation/config

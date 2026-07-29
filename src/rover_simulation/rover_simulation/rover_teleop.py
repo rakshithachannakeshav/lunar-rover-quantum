@@ -78,7 +78,7 @@ def main():
         print(
             '\nERROR: Keyboard teleop needs an interactive terminal.\n'
             'Do NOT start teleop from the launch file. Use a second terminal:\n\n'
-            '  source ~/lunar-rover-quantum/lunar_rover_ws/install/setup.bash\n'
+            '  source ~/lunar-rover-quantum/install/setup.bash\n'
             '  ros2 run rover_simulation rover_teleop.py\n\n'
             'Or use autonomous patrol:\n'
             '  ros2 launch rover_simulation demo.launch.py mode:=patrol\n',
