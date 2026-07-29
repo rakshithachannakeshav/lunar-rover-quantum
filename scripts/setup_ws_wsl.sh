@@ -4,7 +4,7 @@ set -eo pipefail
 # Lunar Rover — ROS 2 Jazzy + Gazebo Harmonic workspace setup (WSL)
 # Run inside Ubuntu 24.04 WSL.
 
-WS_ROOT=~/lunar-rover-quantum/lunar_rover_ws
+WS_ROOT=~/lunar-rover-quantum
 
 # Auto-detect Windows project path (adjust drive letter if needed)
 if [ -d "/mnt/d/lunar-rover-quantum/sim_files" ]; then

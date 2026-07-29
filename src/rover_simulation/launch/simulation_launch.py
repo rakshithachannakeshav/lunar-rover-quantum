@@ -126,7 +126,7 @@ def generate_launch_description():
         msg=(
             '\n'
             '=== Gazebo HEADLESS (no window) — sim is running in the background ===\n'
-            '  See the rover:  bash /mnt/d/lunar-rover-quantum/sim_files/open_gazebo_gui.sh\n'
+            '  See the rover:  bash ~/lunar-rover-quantum/scripts/open_gazebo_gui.sh\n'
             '  Or use RViz:    ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true\n'
             '  Or check odom:  ros2 topic echo /odom --field pose.pose.position\n'
             '====================================================================\n'
