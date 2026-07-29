@@ -1,3 +1,313 @@
+# Project Guide
+
+Single source of truth for this project: current status, how to set up and run it, the system design, and the complete phase-by-phase implementation plan. Everything else that used to live in `docs/` as separate files has been folded into this one.
+
+
+## Original plan vs. actual build
+
+The project's original plan (Phase 1 onward, below) targeted ROS2 Humble on Ubuntu 22.04 with classic Gazebo. Partway through, the team moved to a newer stack. **Everything currently built uses the stack on the right:**
+
+| Component | Original plan | Actual build |
+|---|---|---|
+| Ubuntu | 22.04 LTS | 24.04 LTS |
+| ROS2 | Humble | Jazzy |
+| Gazebo | Classic 11 | Harmonic 8.x |
+
+Wherever an old instruction says `ros-humble-...`, the real equivalent is `ros-jazzy-...`. The "Setup & Run" section below reflects the actual (Jazzy/Harmonic/24.04) stack and is what to actually follow to get the current repo running. The full phase-by-phase blueprint further down is kept for reference/history and for the design of packages not yet built (mapping/planning/quantum/navigation/evaluation) — its early phases describe the superseded Humble-era approach, its later phases (5 onward) are still the plan going forward.
+
+---
+
+# Part 1 — Setup & Run (current, verified state)
+
+Complete step-by-step instructions to get this project running from a fresh clone — environment setup, build, launch, and what's actually verified working right now. Read this before starting new work so you know what state things are in.
+
+## Current status (as of this doc)
+
+| Package | Status |
+|---|---|
+| `rover_simulation` | **Working.** Gazebo Harmonic sim with terrain, rover model, physics — verified end-to-end. |
+| `sensor_pkg` | **Mostly working.** LiDAR and IMU processors verified correct (unit-tested). Encoder/odometry tracks forward/backward motion correctly, but **does not track turning** — heading (`theta`) never updates, so `/odom` is wrong whenever the rover actually turns. See [Known issues](#known-issues). |
+| `mapping_pkg`, `planning_pkg`, `navigation_pkg`, `evaluation_pkg` | Scaffolding only (`package.xml`/`setup.py`/empty `__init__.py`) — no implementation yet. |
+| `web/` (browser 3D viewer) | **Working.** A CSS bug that hid the working scene behind a false error message has been fixed. |
+| `quantum/notebooks` | Not started. |
+
+## 1. Environment requirements
+
+ROS2 Jazzy + Gazebo Harmonic need **Ubuntu 24.04 "Noble"**. This does not run natively on Windows — you need a Linux environment: a VM (VirtualBox recommended, see below), WSL2, or dual-boot.
+
+**Important:** if you're using an existing VM from earlier project work, check its actual OS version first:
+```bash
+cat /etc/os-release
+```
+Ubuntu 22.04 ("Jammy") **cannot** install ROS2 Jazzy — the required system libraries (`libstdc++6 >= 13.1`, `libc6 >= 2.38`, `libpython3.12t64`) don't exist in 22.04's repos, and the package manager will fail with a wall of "not installable" dependency errors. If your VM is 22.04, you need a fresh Ubuntu 24.04 VM instead of trying to force Jazzy onto it.
+
+### Setting up a VirtualBox VM (if you don't have one already)
+
+1. Install [VirtualBox](https://www.virtualbox.org/wiki/Downloads) + Extension Pack.
+2. Download the **Ubuntu 24.04 LTS "Noble Numbat"** desktop ISO.
+3. Create a VM: Type Linux, Version Ubuntu (64-bit). Give it real resources — Gazebo isn't lightweight:
+
+   | Resource | Minimum | Recommended |
+   |---|---|---|
+   | RAM | 4 GB | 8 GB+ |
+   | CPU cores | 2 | 4+ |
+   | Disk | 25 GB | 40 GB+ |
+
+4. In VM Display settings: max out Video Memory (128 MB) and enable **3D Acceleration** if you want the real Gazebo GUI window (optional — RViz works without this, see Step 5).
+5. Install Ubuntu, then install Guest Additions (VirtualBox menu → *Devices → Insert Guest Additions CD*).
+
+## 2. Get the code
+
+```bash
+git clone https://github.com/rakshithachannakeshav/lunar-rover-quantum.git ~/lunar-rover-quantum
+cd ~/lunar-rover-quantum
+```
+
+The repo root **is** the ROS2 workspace — `src/` sits directly at the top, there's no separate `lunar_rover_ws/` folder to `cd` into. Every command below assumes you're standing in `~/lunar-rover-quantum`.
+
+## 3. Install dependencies
+
+These scripts already exist in `scripts/` — run them once, in this order (each does real `apt-get` work and takes a few minutes):
+
+```bash
+chmod +x scripts/*.sh
+
+bash scripts/setup_ros2_repo.sh        # ROS2 apt repo + locale setup
+bash scripts/install_ros2_jazzy.sh     # ROS2 Jazzy desktop + colcon + rosdep
+bash scripts/install_gazebo_harmonic.sh # Gazebo Harmonic + ros_gz bridge
+bash scripts/install_sim_dependencies.sh # xacro, rviz2, nav2, teleop, tf tools...
+bash scripts/install_python_quantum.sh  # Python + Qiskit/quantum stack (creates a venv)
+```
+
+**Note:** `install_ros2_jazzy.sh` and `install_python_quantum.sh` hardcode `/home/monis/.bashrc` (a specific person's username from before this repo was reorganized). If your username isn't `monis`, those specific "add sourcing to `.bashrc`" lines silently do nothing — harmless, but it means new terminals won't auto-source ROS2. Just run `source /opt/ros/jazzy/setup.bash` manually each new terminal.
+
+## 4. Build the workspace
+
+```bash
+source /opt/ros/jazzy/setup.bash
+cd ~/lunar-rover-quantum
+colcon build --symlink-install
+```
+
+Expect `evaluation_pkg`, `mapping_pkg`, `navigation_pkg`, `planning_pkg`, `rover_simulation`, `sensor_pkg` to all report **Finished**, none **Failed**. The four scaffolding packages build near-instantly since there's no real code in them yet.
+
+## 5. Launch the simulation
+
+```bash
+source install/setup.bash
+ros2 launch rover_simulation simulation_launch.py
+```
+
+Gazebo starts **headless** by default (no window) — this is intentional (see the comment at the top of `src/rover_simulation/launch/simulation_launch.py`). To see something visually:
+
+- **Gazebo GUI** (needs working 3D acceleration): `bash scripts/open_gazebo_gui.sh` in a second terminal
+- **RViz instead** (more VM-friendly, usually the better default):
+  ```bash
+  ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true
+  ```
+
+If the Gazebo GUI window is black or crashes, that's a 3D-acceleration problem in the VM, not a code bug — use RViz instead.
+
+## 6. Sanity-check it's running
+
+```bash
+ros2 topic list
+ros2 topic echo /odom --field pose.pose.position
+```
+Expect `/odom`, `/cmd_vel`, `/scan`, `/imu/data`, `/joint_states`, `/tf` among the topics. Drive it manually:
+```bash
+ros2 run rover_simulation rover_keyboard.py
+```
+
+## 7. Run the sensor nodes
+
+```bash
+ros2 launch sensor_pkg sensors_launch.py
+```
+Publishes `/terrain/pointcloud` (from `/scan`) and `/imu/slope` (from `/imu/data`) — both verified correct. Also republishes `/odom` from `/joint_states` — see [Known issues](#known-issues) below before relying on this for anything involving turning.
+
+## 8. Test the web viewer (no Linux/VM needed — runs on Windows too)
+
+```bash
+cd web
+python -m http.server 8080
+```
+Open `http://localhost:8080/index.html` in a browser (not a `file://` URL directly — it needs to be served over HTTP). You should see the 3D rover scene immediately: rover model, rocks, terrain, telemetry HUD, drive controls. Drive with WASD after clicking the canvas; try the **Patrol AI** tab and **Orbit**/**Top** camera modes.
+
+If you still see a "3D engine failed to load" message, hard-refresh (`Ctrl+Shift+R`) to bust a cached pre-fix copy of `style.css`.
+
+## Known issues
+
+- **`encoder_processor.py` doesn't track heading.** It correctly computes forward/backward distance from wheel joint deltas, but `self.theta` is initialized to `0.0` and never updated — there's no `(dr - dl) / wheel_separation` angular term. The published orientation quaternion is always identity. Confirmed by direct testing: even a sharp left/right wheel differential leaves `theta` at exactly `0.0` and `y` at ~0. This matches the encoder's own documented status ("🟡 Mostly Completed... final odometry verification may require relaunch") — it's a known gap, not a new regression. Needs real differential-drive kinematics (wheel separation + radius) added before `/odom` can be trusted for anything involving turning.
+- **VirtualBox's stored "OS type" label isn't authoritative.** Always confirm the actual guest OS with `cat /etc/os-release` rather than trusting VirtualBox's VM settings label — they can silently disagree.
+
+## Troubleshooting reference
+
+| Symptom | Likely cause |
+|---|---|
+| `gz sim --version` fails | Gazebo install step didn't complete — re-run `install_gazebo_harmonic.sh` |
+| Wall of "Depends: ... not installable" errors during `install_ros2_jazzy.sh` | Wrong Ubuntu version — you need 24.04, not 22.04 (see Section 1) |
+| colcon build fails on a specific package | Missing rosdep — try `rosdep install --from-paths src --ignore-src -r -y` from the repo root |
+| Gazebo GUI window is black/crashes | 3D acceleration not working in the VM — use RViz instead (Step 5) |
+| `ros2: command not found` | Forgot to `source /opt/ros/jazzy/setup.bash` in this terminal |
+| Package not found after build | Forgot to `source install/setup.bash` (separate from the ROS2 system source) |
+
+### If you use WSL2 instead of a VM
+
+This project has also been run under WSL2 (Ubuntu 24.04) instead of a VirtualBox VM. If Gazebo's GUI fails to open under WSL2:
+```bash
+export DISPLAY=:0
+export LIBGL_ALWAYS_SOFTWARE=1
+```
+
+---
+
+# Part 2 — System Architecture & Design Reference
+
+## 🧠 Concepts You Must Understand First
+
+### 1. What is ROS2?
+ROS2 (Robot Operating System 2) is **not a traditional OS**. It is a **middleware framework** — a communication layer that lets different software components (called **nodes**) talk to each other via **topics**, **services**, and **actions**.
+
+Think of it like WhatsApp groups for your robot:
+- Each node is a person in the group
+- Topics are group chats where nodes broadcast messages
+- Services are private messages with a reply required
+- Actions are long tasks with progress updates
+
+### 2. What is Gazebo?
+Gazebo is a **physics simulation environment**. It simulates:
+- Gravity, friction, inertia
+- Sensor data (LiDAR, cameras, IMU)
+- Terrain and obstacles
+- Motor responses
+
+We use it so we can **test our rover without breaking real hardware**.
+
+### 3. What is QAOA / Quantum Optimization?
+QAOA (Quantum Approximate Optimization Algorithm) is a quantum algorithm that finds **near-optimal solutions** to combinatorial problems (problems with many possible choices, like path planning).
+
+For us:
+- Classical computers check paths one by one
+- Quantum simulators check many paths simultaneously (in superposition)
+- Result: a near-optimal energy-efficient path
+
+We use **Qiskit AerSimulator** — this runs quantum circuits on your laptop CPU. No real quantum hardware needed.
+
+### 4. What is QUBO?
+QUBO = Quadratic Unconstrained Binary Optimization. It's the **language** quantum optimizers understand. We convert our terrain graph into a QUBO matrix, then let QAOA solve it.
+
+### 5. What is a Terrain Graph?
+We represent the lunar surface as a **graph**:
+- **Nodes** = positions on the terrain
+- **Edges** = paths between positions
+- **Weights** = energy cost to traverse that path (based on slope, roughness, distance)
+
+---
+
+## 📡 ROS2 Node Architecture
+
+Here is a complete list of **every ROS2 node** we will build across all phases:
+
+| Node Name | Package | Purpose | Topics Published | Topics Subscribed |
+|---|---|---|---|---|
+| `lidar_processor` | `sensor_pkg` | Processes raw LiDAR data | `/terrain/pointcloud` | `/scan` |
+| `imu_processor` | `sensor_pkg` | Processes IMU, estimates slope | `/imu/slope` | `/imu/data` |
+| `encoder_processor` | `sensor_pkg` | Wheel odometry | `/odom` | `/encoder/ticks` |
+| `terrain_mapper` | `mapping_pkg` | Builds occupancy grid | `/terrain/grid` | `/terrain/pointcloud` |
+| `terrain_classifier` | `mapping_pkg` | Labels terrain type | `/terrain/classified` | `/terrain/grid` |
+| `graph_builder` | `planning_pkg` | Builds NetworkX graph | `/graph/data` | `/terrain/classified` |
+| `energy_model` | `planning_pkg` | Assigns energy weights | `/graph/weighted` | `/graph/data` |
+| `classical_planner` | `planning_pkg` | A* / Dijkstra path | `/path/classical` | `/graph/weighted` |
+| `quantum_optimizer` | `quantum_pkg` | QAOA optimization | `/path/quantum` | `/graph/weighted` |
+| `path_executor` | `navigation_pkg` | Sends waypoints to robot | `/cmd_vel` | `/path/quantum`, `/path/classical` |
+| `battery_monitor` | `evaluation_pkg` | Tracks energy use | `/battery/status` | `/cmd_vel`, `/odom` |
+| `evaluator` | `evaluation_pkg` | Compares methods | `/metrics` | `/path/classical`, `/path/quantum`, `/battery/status` |
+
+
+### Task 1.7 — Define Energy Cost Model (On Paper)
+
+**Objective**: Understand what makes one path better than another.
+
+Our energy cost for any terrain cell depends on:
+
+```
+Energy Cost = Base_Distance × Slope_Factor × Terrain_Factor × Roughness_Factor
+
+Where:
+  Base_Distance    = actual distance (meters)
+  Slope_Factor     = 1.0 + 2.0 × |sin(slope_angle)|
+  Terrain_Factor:
+    flat rock      = 1.0
+    loose soil     = 1.5
+    crater edge    = 2.0
+    steep slope    = 3.0
+    obstacle       = ∞ (blocked)
+  Roughness_Factor = 1.0 to 2.0 based on LiDAR variance
+```
+
+Write this in your notebook. We implement it in Phase 6.
+
+---
+
+# Part 3 — 12-Phase Roadmap at a Glance
+
+| # | Phase | Timeline | Difficulty | Key deliverable |
+|---|---|---|---|---|
+| 1 | Planning | Week 1 | ⭐ | Architecture diagram, GitHub repo, folder skeleton |
+| 2 | Env Setup | Week 2 | ⭐⭐ | All tools installed, basic ROS2 test passes |
+| 3 | Simulation | Week 3 | ⭐⭐ | Rover moves in lunar terrain, sensors publishing |
+| 4 | Sensors | Week 4 | ⭐⭐ | /scan, /imu/data, /odom topics live |
+| 5 | Mapping | Week 5 | ⭐⭐⭐ | Classified terrain map updating in real time |
+| 6 | Energy Model | Week 6 | ⭐⭐⭐ | Energy-weighted terrain graph as NetworkX object |
+| 7 | Classical Plan | Week 7 | ⭐⭐⭐ | A* path published on /path/classical |
+| 8 | Quantum Opt | Weeks 8-9 | ⭐⭐⭐⭐ | Optimized quantum path published on /path/quantum |
+| 9 | Integration | Week 10 | ⭐⭐⭐ | Full pipeline: sensor → quantum → motors |
+| 10 | Evaluation | Week 11 | ⭐⭐ | Graphs proving quantum saves energy |
+| 11 | Real Robot | Week 12 (pt 1) | ⭐⭐⭐⭐ | Physical rover navigating lunar-like terrain |
+| 12 | Docs & Report | Week 12 (pt 2) | ⭐ | Full report, slides, GitHub README, paper draft |
+
+---
+
+# Part 4 — Jazzy/Harmonic Migration Reference
+
+Key differences to keep in mind when reading any Humble-era instructions below:
+
+## KEY DIFFERENCE FROM HUMBLE
+
+| Thing | Humble | Jazzy (this guide) |
+|---|---|---|
+| Gazebo command | `gazebo` | `gz sim` |
+| Plugin prefix | `libgazebo_ros_*` | `gz-sim-*` |
+| ROS-Gazebo bridge | built into plugins | separate `ros_gz_bridge` node |
+| Sensor topics | plugins publish directly | bridge.yaml translates gz→ROS |
+| Launch package | `gazebo_ros` | `ros_gz_sim` |
+
+
+**Gazebo Harmonic troubleshooting:**
+
+## TROUBLESHOOTING
+
+| Problem | Fix |
+|---|---|
+| `gz sim: command not found` | `source /opt/ros/jazzy/setup.bash` |
+| `/scan` not in `ros2 topic list` | Bridge not running or wrong `gz_topic_name` in bridge.yaml |
+| Rover spawns but won't move | Check bridge has `/rover/cmd_vel` with `ROS_TO_GZ` direction |
+| `gz topic -l` shows `/lidar` but `/scan` missing | Bridge crashed — check config_file path in launch |
+| Rover sinks underground | Change spawn `-z 0.15` to `-z 0.25` in launch file |
+| `ogre2 render engine not found` | `sudo apt install libogre-next-2.3-dev` or switch to `ogre` |
+| RViz2 fixed frame error | Set Fixed Frame to `odom` in Global Options |
+| `create: command not found` | `sudo apt install ros-jazzy-ros-gz-sim -y` |
+| IMU data all zeros | Sensors system plugin missing from URDF — check gz-sim-sensors-system block |
+| xacro property error | Run `xacro rover.urdf.xacro` to find the exact error line |
+
+
+---
+
+# Part 5 — Complete Phase-by-Phase Implementation Blueprint
+
+Full original planning document, all 12 phases. Phases 1-4 describe the superseded Humble/22.04/Gazebo-Classic approach (see Part 1 and Part 4 above for what's actually built); phases 5-12 remain the implementation plan for `mapping_pkg`, `planning_pkg`, the quantum optimizer, `navigation_pkg`, and `evaluation_pkg`, none of which are built yet.
+
 # 🌕 Quantum-Assisted Energy Optimization — Autonomous Lunar Rover Navigation
 # COMPLETE IMPLEMENTATION GUIDE — ALL 12 PHASES
 
