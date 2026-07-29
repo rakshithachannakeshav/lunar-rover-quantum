@@ -1,0 +1,436 @@
+<?xml version="1.0"?>
+<!--
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  LUNAR ROVER — URDF/Xacro (ROS2 Jazzy + Gazebo Harmonic)               ║
+  ║  Project: Quantum-Assisted Energy Optimization for Lunar Rover Nav      ║
+  ║  Features: Modular wheel macro, diff-drive plugin, camera mast,         ║
+  ║            solar panel, antenna, LiDAR placeholder, proper inertials    ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+-->
+<robot name="lunar_rover" xmlns:xacro="http://www.ros.org/wiki/xacro">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MATERIAL DEFINITIONS
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <material name="chassis_silver">
+    <color rgba="0.72 0.72 0.78 1.0"/>
+  </material>
+  <material name="dark_grey">
+    <color rgba="0.18 0.18 0.18 1.0"/>
+  </material>
+  <material name="rubber_black">
+    <color rgba="0.10 0.10 0.10 1.0"/>
+  </material>
+  <material name="solar_blue">
+    <color rgba="0.10 0.20 0.55 1.0"/>
+  </material>
+  <material name="antenna_white">
+    <color rgba="0.92 0.92 0.92 1.0"/>
+  </material>
+  <material name="sensor_orange">
+    <color rgba="0.90 0.45 0.05 1.0"/>
+  </material>
+  <material name="mast_grey">
+    <color rgba="0.50 0.50 0.55 1.0"/>
+  </material>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       INERTIA HELPER MACROS
+       Correct physics formulas for each geometry type
+  ═══════════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Solid box inertia: m, x=length, y=width, z=height -->
+  <xacro:macro name="box_inertia" params="m x y z">
+    <inertial>
+      <mass value="${m}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1.0/12.0) * m * (y*y + z*z)}"
+        iyy="${(1.0/12.0) * m * (x*x + z*z)}"
+        izz="${(1.0/12.0) * m * (x*x + y*y)}"
+        ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Solid cylinder inertia: m=mass, r=radius, l=length, axis along Z -->
+  <xacro:macro name="cylinder_inertia" params="m r l">
+    <inertial>
+      <mass value="${m}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1.0/12.0) * m * (3.0*r*r + l*l)}"
+        iyy="${(1.0/12.0) * m * (3.0*r*r + l*l)}"
+        izz="${0.5 * m * r * r}"
+        ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- Thin cylinder inertia for wheel (axis along Y after rpy="1.5707 0 0") -->
+  <xacro:macro name="wheel_inertia" params="m r l">
+    <inertial>
+      <mass value="${m}"/>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <inertia
+        ixx="${(1.0/12.0) * m * (3.0*r*r + l*l)}"
+        iyy="${0.5 * m * r * r}"
+        izz="${(1.0/12.0) * m * (3.0*r*r + l*l)}"
+        ixy="0" ixz="0" iyz="0"/>
+    </inertial>
+  </xacro:macro>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       BASE FOOTPRINT — The grounded TF origin
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <link name="base_footprint"/>
+
+  <joint name="base_footprint_joint" type="fixed">
+    <parent link="base_footprint"/>
+    <child link="base_link"/>
+    <!-- Chassis centre is 0.330m above ground (wheel_radius=0.18, wheel_joint_z=-0.150) -->
+    <origin xyz="0 0 0.330" rpy="0 0 0"/>
+  </joint>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       MAIN CHASSIS — 1.0m long, 0.7m wide, 0.25m tall
+       Mass: 15 kg (lightweight lunar rover body)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <link name="base_link">
+
+    <!-- Main body box -->
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.0 0.7 0.25"/>
+      </geometry>
+      <material name="chassis_silver"/>
+    </visual>
+
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="1.0 0.7 0.25"/>
+      </geometry>
+    </collision>
+
+    <!-- Chassis inertia: 15kg, 1.0 x 0.7 x 0.25 -->
+    <xacro:box_inertia m="15.0" x="1.0" y="0.7" z="0.25"/>
+
+  </link>
+
+  <!-- Equipment deck on top of chassis -->
+  <joint name="deck_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="equipment_deck"/>
+    <origin xyz="0 0 0.165" rpy="0 0 0"/>
+  </joint>
+
+  <link name="equipment_deck">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.65 0.55 0.06"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.65 0.55 0.06"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="1.0" x="0.65" y="0.55" z="0.06"/>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SOLAR PANEL — Wide flat panel on top, tilted slightly for aesthetics
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <joint name="solar_panel_joint" type="fixed">
+    <parent link="equipment_deck"/>
+    <child link="solar_panel"/>
+    <!-- Raised above equipment deck, slight rearward tilt -->
+    <origin xyz="0.1 0 0.10" rpy="0 0.15 0"/>
+  </joint>
+
+  <link name="solar_panel">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.7 0.9 0.012"/>
+      </geometry>
+      <material name="solar_blue"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.7 0.9 0.012"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="0.8" x="0.7" y="0.9" z="0.012"/>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       CAMERA MAST — Vertical column on front of deck
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <joint name="camera_mast_joint" type="fixed">
+    <parent link="equipment_deck"/>
+    <child link="camera_mast"/>
+    <origin xyz="0.30 0 0.20" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_mast">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.025" length="0.40"/>
+      </geometry>
+      <material name="mast_grey"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.025" length="0.40"/>
+      </geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.4" r="0.025" l="0.40"/>
+  </link>
+
+  <!-- Camera head at top of mast -->
+  <joint name="camera_head_joint" type="fixed">
+    <parent link="camera_mast"/>
+    <child link="camera_link"/>
+    <origin xyz="0 0 0.22" rpy="0 0 0"/>
+  </joint>
+
+  <link name="camera_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.12 0.06"/>
+      </geometry>
+      <material name="sensor_orange"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.08 0.12 0.06"/>
+      </geometry>
+    </collision>
+    <xacro:box_inertia m="0.3" x="0.08" y="0.12" z="0.06"/>
+  </link>
+
+  <!-- Camera optical frame (for RViz camera display) -->
+  <joint name="camera_optical_joint" type="fixed">
+    <parent link="camera_link"/>
+    <child link="camera_optical_frame"/>
+    <!-- Rotate to camera convention: Z forward, X right, Y down -->
+    <origin xyz="0.04 0 0" rpy="${-pi/2} 0 ${-pi/2}"/>
+  </joint>
+
+  <link name="camera_optical_frame"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ANTENNA — Thin vertical rod on rear of chassis
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <joint name="antenna_joint" type="fixed">
+    <parent link="equipment_deck"/>
+    <child link="antenna"/>
+    <origin xyz="-0.25 0.15 0.30" rpy="0 0 0"/>
+  </joint>
+
+  <link name="antenna">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.008" length="0.55"/>
+      </geometry>
+      <material name="antenna_white"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.008" length="0.55"/>
+      </geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.15" r="0.008" l="0.55"/>
+  </link>
+
+  <!-- Antenna dish at top -->
+  <joint name="antenna_dish_joint" type="fixed">
+    <parent link="antenna"/>
+    <child link="antenna_dish"/>
+    <origin xyz="0 0 0.30" rpy="0 0.4 0"/>
+  </joint>
+
+  <link name="antenna_dish">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.08" length="0.01"/>
+      </geometry>
+      <material name="antenna_white"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.08" length="0.01"/>
+      </geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.05" r="0.08" l="0.01"/>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LIDAR PLACEHOLDER — Mounted on front of deck
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <joint name="lidar_joint" type="fixed">
+    <parent link="equipment_deck"/>
+    <child link="lidar_link"/>
+    <origin xyz="0.20 0 0.06" rpy="0 0 0"/>
+  </joint>
+
+  <link name="lidar_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.06"/>
+      </geometry>
+      <material name="sensor_orange"/>
+    </visual>
+    <collision>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <cylinder radius="0.05" length="0.06"/>
+      </geometry>
+    </collision>
+    <xacro:cylinder_inertia m="0.3" r="0.05" l="0.06"/>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       WHEEL MACRO — Modular, used for all 4 wheels
+       Params: name (e.g. front_left), x=fore/aft offset, y=lateral offset
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <xacro:macro name="wheel" params="name x y mu:=0.8">
+
+    <!-- Wheel link: cylinder rotated so its axis is along Y (left-right) -->
+    <link name="${name}_wheel">
+
+      <visual>
+        <!-- rpy="1.5707 0 0" rotates Z-cylinder to Y-axis -->
+        <origin xyz="0 0 0" rpy="1.5707963 0 0"/>
+        <geometry>
+          <cylinder radius="0.18" length="0.14"/>
+        </geometry>
+        <material name="rubber_black"/>
+      </visual>
+
+      <collision name="${name}_wheel_collision">
+        <origin xyz="0 0 0" rpy="1.5707963 0 0"/>
+        <geometry>
+          <cylinder radius="0.18" length="0.14"/>
+        </geometry>
+      </collision>
+
+      <!-- Wheel inertia: 1.5kg, radius=0.18, length=0.14 -->
+      <!-- After rpy rotation, spin axis is Y, so use wheel_inertia macro -->
+      <xacro:wheel_inertia m="1.5" r="0.18" l="0.14"/>
+
+    </link>
+
+    <!-- Continuous joint connecting wheel to base chassis -->
+    <joint name="${name}_joint" type="continuous">
+      <parent link="base_link"/>
+      <child link="${name}_wheel"/>
+      <!-- Position: x=fore/aft, y=lateral (±side), z=-0.150 (below chassis centre) -->
+      <origin xyz="${x} ${y} -0.150" rpy="0 0 0"/>
+      <!-- Rotation axis along Y (wheel spins around its axle) -->
+      <axis xyz="0 1 0"/>
+      <dynamics damping="0.1" friction="0.05"/>
+      <limit effort="100" velocity="10"/>
+    </joint>
+
+    <!-- Gazebo physics & material properties for this wheel -->
+    <gazebo reference="${name}_wheel">
+      <collision name="${name}_wheel_collision">
+        <surface>
+          <friction>
+            <ode>
+              <mu>${mu}</mu>
+              <mu2>${mu}</mu2>
+              <fdir1>1 0 0</fdir1>
+            </ode>
+            <bullet>
+              <friction>${mu}</friction>
+              <friction2>${mu}</friction2>
+              <fdir1>1 0 0</fdir1>
+            </bullet>
+          </friction>
+          <contact>
+            <ode>
+              <kp>50000.0</kp>
+              <kd>5000.0</kd>
+              <min_depth>0.0001</min_depth>
+              <max_vel>0.05</max_vel>
+            </ode>
+            <bullet>
+              <kp>50000.0</kp>
+              <kd>5000.0</kd>
+            </bullet>
+          </contact>
+        </surface>
+      </collision>
+      <material>Gazebo/Black</material>
+    </gazebo>
+
+  </xacro:macro>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       WHEEL INSTANCES
+       6-wheel configuration: front, mid, rear for stability on lunar terrain
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <!-- Front wheels -->
+  <xacro:wheel name="front_left"  x="0.38"  y="0.42"  mu="0.75"/>
+  <xacro:wheel name="front_right" x="0.38"  y="-0.42" mu="0.75"/>
+  <!-- Middle wheels (widest track for stability, provides primary turning traction) -->
+  <xacro:wheel name="mid_left"    x="0.0"   y="0.42"  mu="0.85"/>
+  <xacro:wheel name="mid_right"   x="0.0"   y="-0.42" mu="0.85"/>
+  <!-- Rear wheels -->
+  <xacro:wheel name="rear_left"   x="-0.38" y="0.42"  mu="0.75"/>
+  <xacro:wheel name="rear_right"  x="-0.38" y="-0.42" mu="0.75"/>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GAZEBO MATERIAL OVERRIDES
+       Gazebo Harmonic uses OGRE2 material tags
+  ═══════════════════════════════════════════════════════════════════════════ -->
+
+  <!-- Chassis metallic shine -->
+  <gazebo reference="base_link">
+    <material>Gazebo/GreyTransparent</material>
+    <mu1>0.3</mu1>
+    <mu2>0.3</mu2>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GAZEBO HARMONIC — MODEL-LEVEL PLUGINS (must NOT be on a link reference)
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <gazebo>
+    <plugin filename="gz-sim-diff-drive-system"
+            name="gz::sim::systems::DiffDrive">
+      <left_joint>mid_left_joint</left_joint>
+      <right_joint>mid_right_joint</right_joint>
+      <wheel_separation>0.84</wheel_separation>
+      <wheel_radius>0.18</wheel_radius>
+      <max_linear_velocity>0.5</max_linear_velocity>
+      <min_linear_velocity>-0.5</min_linear_velocity>
+      <max_angular_velocity>1.0</max_angular_velocity>
+      <min_angular_velocity>-1.0</min_angular_velocity>
+      <max_linear_acceleration>1.5</max_linear_acceleration>
+      <max_angular_acceleration>2.0</max_angular_acceleration>
+      <topic>cmd_vel</topic>
+      <odom_topic>odometry</odom_topic>
+      <tf_topic>tf</tf_topic>
+      <frame_id>odom</frame_id>
+      <child_frame_id>base_footprint</child_frame_id>
+      <odom_publish_frequency>30</odom_publish_frequency>
+    </plugin>
+  </gazebo>
+
+</robot>

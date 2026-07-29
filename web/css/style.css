@@ -1,0 +1,588 @@
+/* ============================================================
+   Lunar Rover — Simulation UI  (complete rewrite)
+   ============================================================ */
+
+/* ── tokens ─────────────────────────────────────────────────── */
+:root {
+  --bg: #04040a;
+  --surface: rgba(8, 10, 20, 0.88);
+  --surface-hi: rgba(14, 18, 34, 0.92);
+  --border: rgba(255, 255, 255, 0.07);
+  --border-hi: rgba(255, 255, 255, 0.14);
+  --text: #dde1ee;
+  --muted: #6b7190;
+  --accent: #f59e0b;
+  --accent-glow: rgba(245, 158, 11, 0.25);
+  --accent-dim: rgba(245, 158, 11, 0.12);
+  --success: #34d399;
+  --danger: #f87171;
+  --blue: #60a5fa;
+  --font: "Outfit", system-ui, sans-serif;
+  --mono: "JetBrains Mono", monospace;
+  --radius: 14px;
+  --panel-blur: 20px;
+}
+
+/* ── reset ────────────────────────────────────────────────────── */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--bg);
+}
+
+body {
+  outline: none;
+}
+
+/* ── canvas ────────────────────────────────────────────────────── */
+#canvas-wrap {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: auto;
+}
+
+#canvas-wrap canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* ── error overlay ─────────────────────────────────────────────── */
+.load-error {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(4, 4, 10, 0.97);
+  backdrop-filter: blur(20px);
+}
+
+.error-box {
+  text-align: center;
+  padding: 2.5rem 3rem;
+  background: var(--surface-hi);
+  border: 1px solid var(--border-hi);
+  border-radius: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.9rem;
+}
+
+.error-icon {
+  font-size: 3rem;
+}
+
+.error-box h2 {
+  font-size: 1.3rem;
+  font-weight: 600;
+}
+
+.error-box p {
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.error-box code {
+  font-family: var(--mono);
+  font-size: 0.88rem;
+  color: var(--accent);
+  background: var(--accent-dim);
+  padding: 0.45rem 1.1rem;
+  border-radius: 8px;
+}
+
+/* ── top bar ────────────────────────────────────────────────────── */
+.top-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.85rem 1.5rem;
+  background: linear-gradient(180deg, rgba(4, 4, 10, 0.96) 0%, transparent 100%);
+  pointer-events: none;
+}
+
+.top-bar>* {
+  pointer-events: auto;
+}
+
+/* brand */
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+}
+
+.brand-moon {
+  font-size: 2rem;
+  filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.5));
+  animation: moonPulse 4s ease-in-out infinite;
+}
+
+@keyframes moonPulse {
+
+  0%,
+  100% {
+    filter: drop-shadow(0 0 10px rgba(245, 158, 11, 0.4));
+  }
+
+  50% {
+    filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.8));
+  }
+}
+
+.brand h1 {
+  font-size: 1.15rem;
+  font-weight: 600;
+  letter-spacing: 0.03em;
+}
+
+.brand-sub {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-top: 1px;
+}
+
+/* mode tabs */
+.mode-tabs {
+  display: flex;
+  gap: 3px;
+  padding: 4px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  backdrop-filter: blur(var(--panel-blur));
+}
+
+.tab {
+  font-family: var(--font);
+  font-size: 0.78rem;
+  font-weight: 500;
+  padding: 0.42rem 1.1rem;
+  border: none;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.tab:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.tab.active {
+  background: var(--accent-dim);
+  color: var(--accent);
+}
+
+/* top badge */
+.top-info {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.top-badge {
+  font-family: var(--mono);
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.15em;
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+  padding: 0.3rem 0.75rem;
+  border-radius: 6px;
+}
+
+/* ── HUD panels ─────────────────────────────────────────────────── */
+.hud {
+  position: fixed;
+  top: 5rem;
+  z-index: 10;
+  width: 226px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+  pointer-events: none;
+}
+
+.hud button,
+.hud input,
+.hud .dpad,
+.hud .cam-btns,
+.hud canvas,
+.hud .quantum-display {
+  pointer-events: auto;
+}
+
+.hud.left {
+  left: 1rem;
+}
+
+.hud.right {
+  right: 1rem;
+}
+
+.panel {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 0.9rem 1rem;
+  backdrop-filter: blur(var(--panel-blur));
+  transition: border-color 0.2s;
+}
+
+.panel:hover {
+  border-color: var(--border-hi);
+}
+
+.panel h2 {
+  font-size: 0.6rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--muted);
+  margin-bottom: 0.7rem;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.panel h2::before {
+  content: "";
+  display: block;
+  width: 3px;
+  height: 10px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+/* stats rows */
+.stats {
+  display: flex;
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.stat-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.stat-row dt {
+  font-size: 0.72rem;
+  color: var(--muted);
+}
+
+.stat-row dd {
+  font-family: var(--mono);
+  font-size: 0.76rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+dd.accent {
+  color: var(--accent);
+}
+
+dd.success {
+  color: var(--success);
+}
+
+dd.goal-dd {
+  color: var(--blue);
+}
+
+/* hint */
+.hint {
+  font-size: 0.68rem;
+  color: var(--muted);
+  margin-bottom: 0.7rem;
+}
+
+.orbit-hint {
+  margin-top: 0.4rem;
+  margin-bottom: 0;
+}
+
+/* ── D-pad ────────────────────────────────────────────────────────── */
+.dpad {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(3, 1fr);
+  gap: 5px;
+  max-width: 148px;
+  margin: 0 auto 0.9rem;
+}
+
+.dpad-btn {
+  aspect-ratio: 1;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  color: var(--text);
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, transform 0.08s, box-shadow 0.12s;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.dpad-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.18);
+}
+
+.dpad-btn:active,
+.dpad-btn.pressed {
+  background: var(--accent-dim);
+  border-color: var(--accent);
+  transform: scale(0.93);
+  box-shadow: 0 0 10px var(--accent-glow);
+}
+
+.dpad-btn.stop {
+  color: var(--accent);
+}
+
+.dpad-btn:nth-child(1) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.dpad-btn:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.dpad-btn.stop {
+  grid-column: 2;
+  grid-row: 2;
+}
+
+.dpad-btn:nth-child(4) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.dpad-btn:nth-child(5) {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+/* speed slider */
+.slider-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.72rem;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.slider-row strong {
+  color: var(--accent);
+}
+
+.slider-row input[type="range"] {
+  width: 100%;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+/* ── Camera buttons ──────────────────────────────────────────────── */
+.cam-btns {
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+}
+
+.cam-btn {
+  flex: 1;
+  min-width: 56px;
+  font-family: var(--font);
+  font-size: 0.7rem;
+  padding: 0.38rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.cam-btn:hover,
+.cam-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-dim);
+}
+
+/* ── Quantum AI bars ─────────────────────────────────────────────── */
+.quantum-display {
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+}
+
+.q-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.65rem;
+  color: var(--muted);
+}
+
+.q-bar-row span:first-child {
+  min-width: 80px;
+}
+
+.q-bar {
+  flex: 1;
+  height: 4px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.q-fill {
+  height: 100%;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--blue), var(--accent));
+  animation: qPulse 3s ease-in-out infinite;
+}
+
+@keyframes qPulse {
+
+  0%,
+  100% {
+    opacity: 1;
+  }
+
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.q-pct {
+  font-family: var(--mono);
+  font-size: 0.62rem;
+  color: var(--accent);
+  min-width: 30px;
+}
+
+/* ── Mini-map ────────────────────────────────────────────────────── */
+.mini-map-panel canvas {
+  display: block;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  width: 100%;
+}
+
+/* ── Status bar ──────────────────────────────────────────────────── */
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem 1.2rem;
+  flex-wrap: wrap;
+  padding: 0.6rem 1.5rem;
+  font-size: 0.7rem;
+  color: var(--muted);
+  background: linear-gradient(0deg, rgba(4, 4, 10, 0.97) 0%, transparent 100%);
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 8px var(--success);
+  animation: blink 2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+
+@keyframes blink {
+
+  0%,
+  100% {
+    opacity: 1
+  }
+
+  50% {
+    opacity: 0.3
+  }
+}
+
+.status-bar code {
+  font-family: var(--mono);
+  font-size: 0.66rem;
+  color: var(--success);
+}
+
+.sep {
+  opacity: 0.25;
+}
+
+/* ── responsive ──────────────────────────────────────────────────── */
+@media (max-width: 960px) {
+  .hud {
+    width: 196px;
+  }
+}
+
+@media (max-width: 700px) {
+  .hud.left {
+    display: none;
+  }
+
+  .hud.right {
+    width: auto;
+    left: 0.75rem;
+    right: 0.75rem;
+    top: auto;
+    bottom: 3.5rem;
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
+
+  .hud.right .panel {
+    flex: 1;
+    min-width: 140px;
+  }
+
+  .panel h2::before {
+    display: none;
+  }
+}

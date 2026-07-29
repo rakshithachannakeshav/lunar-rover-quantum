@@ -1,0 +1,305 @@
+<?xml version="1.0" ?>
+<!--
+  ╔══════════════════════════════════════════════════════════════════════════╗
+  ║  LUNAR TERRAIN WORLD — Gazebo Harmonic (SDF 1.9)                       ║
+  ║  Terrain: 1025×1025 16-bit heightmap, 150×150 m, 25 m height range    ║
+  ║  ONE continuous surface — no strips, no gaps, no floating geometry     ║
+  ╚══════════════════════════════════════════════════════════════════════════╝
+-->
+<sdf version="1.9">
+<world name="lunar_terrain">
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       PHYSICS — Moon gravity, default DART engine
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <physics name="default_physics" type="ignored">
+    <max_step_size>0.002</max_step_size>
+    <real_time_factor>1.0</real_time_factor>
+    <max_contacts>80</max_contacts>
+  </physics>
+
+  <gravity>0 0 -1.62</gravity>
+
+  <!-- Required Gazebo Harmonic system plugins -->
+  <plugin filename="gz-sim-physics-system"           name="gz::sim::systems::Physics"/>
+  <plugin filename="gz-sim-user-commands-system"     name="gz::sim::systems::UserCommands"/>
+  <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
+  <plugin filename="gz-sim-contact-system"           name="gz::sim::systems::Contact"/>
+  <plugin filename="gz-sim-sensors-system"           name="gz::sim::systems::Sensors">
+    <render_engine>ogre2</render_engine>
+  </plugin>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SCENE — Dark space ambient
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <scene>
+    <ambient>0.02 0.02 0.02 1</ambient>
+    <background>0.01 0.01 0.02 1</background>
+    <shadows>true</shadows>
+    <grid>false</grid>
+    <origin_visual>false</origin_visual>
+  </scene>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       LIGHTING — Low-angle harsh lunar sun & extremely subtle blue fill
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <light type="directional" name="sun">
+    <cast_shadows>true</cast_shadows>
+    <pose>0 0 200 0 0 0</pose>
+    <!-- Very low angle → long dramatic shadows across craters & rocks -->
+    <direction>-0.45 0.2 -0.35</direction>
+    <diffuse>1.00 1.00 0.95 1</diffuse>
+    <specular>0.70 0.65 0.55 1</specular>
+    <attenuation>
+      <range>3000</range>
+      <constant>0.9</constant>
+      <linear>0.001</linear>
+      <quadratic>0.0001</quadratic>
+    </attenuation>
+  </light>
+
+  <light type="directional" name="fill">
+    <cast_shadows>false</cast_shadows>
+    <pose>0 0 100 0 0 0</pose>
+    <direction>0.4 -0.4 -0.82</direction>
+    <diffuse>0.02 0.03 0.05 1</diffuse>
+    <specular>0.01 0.01 0.03 1</specular>
+  </light>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       TERRAIN — Continuous 1025×1025 heightmap
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <model name="terrain">
+    <static>true</static>
+    <pose>0 0 0 0 0 0</pose>
+    <link name="terrain_link">
+
+      <!-- VISUAL — rendered heightmap with lunar-grey diffuse colour -->
+      <visual name="terrain_visual">
+        <geometry>
+          <heightmap>
+            <uri>heightmap.png</uri>
+            <size>150 150 10</size>
+            <!-- pos z = -5 → pixel 0.5 = z 0 m. Terrain spans -3.4 m to +4.0 m -->
+            <pos>0 0 -5</pos>
+            <!-- Diffuse texture tiles every 6 m — gives surface grain detail -->
+            <texture>
+              <diffuse>terrain_tex.png</diffuse>
+              <normal>terrain_normal.png</normal>
+              <size>6</size>
+            </texture>
+          </heightmap>
+        </geometry>
+        <cast_shadows>true</cast_shadows>
+      </visual>
+
+      <!-- COLLISION — same heightmap (ignored by DART but kept for compatibility) -->
+      <collision name="terrain_collision">
+        <geometry>
+          <heightmap>
+            <uri>heightmap.png</uri>
+            <size>150 150 10</size>
+            <pos>0 0 -5</pos>
+          </heightmap>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>0.80</mu>
+              <mu2>0.80</mu2>
+              <slip1>0.002</slip1>
+              <slip2>0.002</slip2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>120000</kp>
+              <kd>800</kd>
+              <max_vel>0.05</max_vel>
+              <min_depth>0.003</min_depth>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+    </link>
+  </model>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GROUNDED FLAT BASALT ROCKS
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <model name="rock_a">
+    <static>true</static>
+    <!-- terrain Z ≈ +0.55m. Rock embedded by 0.2m -->
+    <pose>10 -8 0.35 0.1 0.2 0.7</pose>
+    <link name="link">
+      <collision name="c"><geometry><box><size>1.6 1.4 0.8</size></box></geometry></collision>
+      <visual name="v">
+        <geometry><box><size>1.6 1.4 0.8</size></box></geometry>
+        <material>
+          <ambient>0.20 0.18 0.15 1</ambient>
+          <diffuse>0.32 0.28 0.24 1</diffuse>
+          <specular>0.06 0.05 0.05 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+  <model name="rock_b">
+    <static>true</static>
+    <!-- terrain Z ≈ +1.76m. Rock embedded by 0.25m -->
+    <pose>-12 10 1.51 0.3 0.05 1.2</pose>
+    <link name="link">
+      <collision name="c"><geometry><box><size>2.0 1.5 1.0</size></box></geometry></collision>
+      <visual name="v">
+        <geometry><box><size>2.0 1.5 1.0</size></box></geometry>
+        <material>
+          <ambient>0.21 0.19 0.16 1</ambient>
+          <diffuse>0.33 0.30 0.25 1</diffuse>
+          <specular>0.06 0.06 0.05 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+  <model name="rock_c">
+    <static>true</static>
+    <!-- terrain Z ≈ +1.87m. Rock embedded by 0.15m -->
+    <pose>8 15 1.72 0.0 0.15 0.4</pose>
+    <link name="link">
+      <collision name="c"><geometry><box><size>1.2 1.0 0.6</size></box></geometry></collision>
+      <visual name="v">
+        <geometry><box><size>1.2 1.0 0.6</size></box></geometry>
+        <material>
+          <ambient>0.22 0.20 0.17 1</ambient>
+          <diffuse>0.35 0.31 0.26 1</diffuse>
+          <specular>0.05 0.05 0.04 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+  <model name="rock_d">
+    <static>true</static>
+    <!-- terrain Z ≈ +1.45m. Rock embedded by 0.2m -->
+    <pose>-8 -12 1.25 0.2 0.3 0.9</pose>
+    <link name="link">
+      <collision name="c"><geometry><box><size>1.4 1.2 0.7</size></box></geometry></collision>
+      <visual name="v">
+        <geometry><box><size>1.4 1.2 0.7</size></box></geometry>
+        <material>
+          <ambient>0.19 0.17 0.14 1</ambient>
+          <diffuse>0.30 0.27 0.22 1</diffuse>
+          <specular>0.06 0.06 0.05 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       ROVER WINDING TRAIL PATH — Left and right wheel tracks
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <model name="rover_trail_path">
+    <static>true</static>
+    <!-- Slightly above ground plane to prevent z-fighting/flickering -->
+    <pose>0 0 0.377 0 0 0</pose>
+    <link name="link">
+      <!-- Point 0: (-2.0, 0.0) -->
+      <visual name="t_l_0"><pose>-2.0 0.42 0 0 0 0</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_0"><pose>-2.0 -0.42 0 0 0 0</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 1: (-1.0, 0.0) -->
+      <visual name="t_l_1"><pose>-1.0 0.42 0 0 0 0</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_1"><pose>-1.0 -0.42 0 0 0 0</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 2: (0.0, 0.0) -->
+      <visual name="t_l_2"><pose>-0.04 0.42 0 0 0 0.10</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_2"><pose>0.04 -0.42 0 0 0 0.10</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 3: (1.0, 0.1) -->
+      <visual name="t_l_3"><pose>0.92 0.51 0 0 0 0.20</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_3"><pose>1.08 -0.31 0 0 0 0.20</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 4: (2.0, 0.3) -->
+      <visual name="t_l_4"><pose>1.92 0.71 0 0 0 0.20</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_4"><pose>2.08 -0.11 0 0 0 0.20</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 5: (3.0, 0.5) -->
+      <visual name="t_l_5"><pose>2.92 0.91 0 0 0 0.20</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_5"><pose>3.08 0.09 0 0 0 0.20</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 6: (4.0, 0.7) -->
+      <visual name="t_l_6"><pose>3.96 1.12 0 0 0 0.10</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_6"><pose>4.04 0.28 0 0 0 0.10</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 7: (5.0, 0.8) -->
+      <visual name="t_l_7"><pose>5.04 1.22 0 0 0 -0.10</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_7"><pose>4.96 0.38 0 0 0 -0.10</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 8: (6.0, 0.7) -->
+      <visual name="t_l_8"><pose>6.12 1.10 0 0 0 -0.29</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_8"><pose>5.88 0.30 0 0 0 -0.29</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 9: (7.0, 0.4) -->
+      <visual name="t_l_9"><pose>7.16 0.79 0 0 0 -0.38</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_9"><pose>6.84 0.01 0 0 0 -0.38</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+
+      <!-- Point 10: (8.0, 0.0) -->
+      <visual name="t_l_10"><pose>8.16 0.39 0 0 0 -0.38</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+      <visual name="t_r_10"><pose>7.84 -0.39 0 0 0 -0.38</pose><geometry><box><size>0.25 0.12 0.001</size></box></geometry><material><ambient>0.04 0.04 0.04 1</ambient><diffuse>0.04 0.04 0.04 1</diffuse></material></visual>
+    </link>
+  </model>
+
+  <!-- Flat pad on the trail — stable spawn (terrain ~0.377 m here) -->
+  <model name="rover_pad">
+    <static>true</static>
+    <!-- Covers flat trail from spawn (-2) to goal (~8) -->
+    <pose>3 0 0.36 0 0 0</pose>
+    <link name="pad_link">
+      <collision name="col">
+        <geometry><box><size>16 6 0.04</size></box></geometry>
+        <surface>
+          <friction><ode><mu>0.85</mu><mu2>0.85</mu2></ode></friction>
+          <contact>
+            <ode><kp>120000</kp><kd>800</kd><max_vel>0.05</max_vel></ode>
+          </contact>
+        </surface>
+      </collision>
+      <visual name="vis">
+        <geometry><box><size>16 6 0.04</size></box></geometry>
+        <material>
+          <ambient>0.35 0.35 0.38 1</ambient>
+          <diffuse>0.4 0.4 0.43 1</diffuse>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+  <!-- Rover: model Z=0 is wheel plane; pad top = 0.38 m -->
+  <include>
+    <uri>model://lunar_rover</uri>
+    <name>lunar_rover</name>
+    <pose>-2 0 0.38 0 0 0</pose>
+  </include>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       GOAL MARKER — glowing orange NASA target disc
+       ═══════════════════════════════════════════════════════════════════════════ -->
+  <model name="goal_marker">
+    <static>true</static>
+    <!-- terrain at (8,0) is near flat spawn zone, z ≈ +0.4 m -->
+    <pose>8 0 0.44 0 0 0</pose>
+    <link name="marker_link">
+      <visual name="v">
+        <geometry><cylinder><radius>0.5</radius><length>0.04</length></cylinder></geometry>
+        <material>
+          <ambient>1.0 0.4 0.0 1</ambient>
+          <diffuse>1.0 0.4 0.0 1</diffuse>
+          <specular>1.0 0.6 0.2 1</specular>
+          <emissive>0.6 0.2 0.0 1</emissive>
+        </material>
+      </visual>
+    </link>
+  </model>
+
+</world>
+</sdf>

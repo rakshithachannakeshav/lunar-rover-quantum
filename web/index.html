@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Lunar Rover — Quantum Navigation Sim</title>
+  <meta name="description"
+    content="Real-time 3D lunar rover simulation with autonomous patrol and quantum-assisted navigation." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+
+<body>
+  <!-- 3D canvas -->
+  <div id="canvas-wrap"></div>
+
+  <!-- error overlay (shown if THREE fails) -->
+  <div id="load-error" class="load-error" hidden>
+    <div class="error-box">
+      <span class="error-icon">⚠</span>
+      <h2>3D engine failed to load</h2>
+      <p>Serve the folder over HTTP, then open:</p>
+      <code>http://localhost:8080</code>
+      <p class="hint">Run: <code>python -m http.server 8080</code> in the <em>web/</em> folder</p>
+    </div>
+  </div>
+
+  <!-- ── TOP BAR ──────────────────────────────────────────── -->
+  <header class="top-bar" role="banner">
+    <div class="brand">
+      <div class="brand-moon">🌑</div>
+      <div>
+        <h1>Lunar Rover</h1>
+        <p class="brand-sub">Quantum Navigation · Phase 3 Simulation</p>
+      </div>
+    </div>
+
+    <div class="mode-tabs" role="tablist" aria-label="Drive mode">
+      <button id="tab-manual" type="button" class="tab active" data-mode="manual" role="tab"
+        aria-selected="true">Manual</button>
+      <button id="tab-patrol" type="button" class="tab" data-mode="patrol" role="tab" aria-selected="false">Patrol
+        AI</button>
+    </div>
+
+    <div class="top-info">
+      <span class="top-badge" id="badge-mode">MANUAL</span>
+    </div>
+  </header>
+
+  <!-- ── LEFT HUD — Telemetry ──────────────────────────────── -->
+  <aside class="hud left" aria-label="Telemetry">
+    <section class="panel">
+      <h2>Telemetry</h2>
+      <dl class="stats">
+        <div class="stat-row">
+          <dt>Speed</dt>
+          <dd id="stat-speed" class="accent">0.00 m/s</dd>
+        </div>
+        <div class="stat-row">
+          <dt>Heading</dt>
+          <dd id="stat-heading">0°</dd>
+        </div>
+        <div class="stat-row">
+          <dt>Position</dt>
+          <dd id="stat-pos">−3.0, 3.0</dd>
+        </div>
+        <div class="stat-row">
+          <dt>Goal dist.</dt>
+          <dd id="stat-goal" class="goal-dd">— m</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel">
+      <h2>System</h2>
+      <dl class="stats">
+        <div class="stat-row">
+          <dt>Battery</dt>
+          <dd id="stat-battery" class="success">100%</dd>
+        </div>
+        <div class="stat-row">
+          <dt>Gravity</dt>
+          <dd id="stat-grav">1.62 m/s²</dd>
+        </div>
+        <div class="stat-row">
+          <dt>Surface °C</dt>
+          <dd id="stat-temp">−153 °C</dd>
+        </div>
+        <div class="stat-row">
+          <dt>Terrain</dt>
+          <dd>Lunar regolith</dd>
+        </div>
+      </dl>
+    </section>
+
+    <section class="panel mini-map-panel">
+      <h2>Mini Map</h2>
+      <canvas id="minimap" width="176" height="176" aria-label="Overhead mini map"></canvas>
+    </section>
+  </aside>
+
+  <!-- ── RIGHT HUD — Controls ──────────────────────────────── -->
+  <aside class="hud right" aria-label="Controls">
+    <section class="panel controls-panel">
+      <h2>Drive</h2>
+      <p class="hint">WASD · Arrow keys · On-screen pad</p>
+      <div class="dpad" id="dpad" role="group" aria-label="Direction pad">
+        <button id="btn-fwd" type="button" class="dpad-btn" data-key="w" aria-label="Forward">▲</button>
+        <button id="btn-left" type="button" class="dpad-btn" data-key="a" aria-label="Turn left">◀</button>
+        <button id="btn-stop" type="button" class="dpad-btn stop" data-key=" " aria-label="Stop">■</button>
+        <button id="btn-right" type="button" class="dpad-btn" data-key="d" aria-label="Turn right">▶</button>
+        <button id="btn-rev" type="button" class="dpad-btn" data-key="s" aria-label="Reverse">▼</button>
+      </div>
+      <label class="slider-row">
+        <span>Max speed &nbsp;<strong id="speed-val">0.5</strong> m/s</span>
+        <input id="speed-slider" type="range" min="0.1" max="1.5" step="0.05" value="0.5" aria-label="Max speed" />
+      </label>
+    </section>
+
+    <section class="panel">
+      <h2>Camera</h2>
+      <div class="cam-btns" role="group" aria-label="Camera mode">
+        <button id="cam-chase" type="button" class="cam-btn active" data-cam="chase">Chase</button>
+        <button id="cam-orbit" type="button" class="cam-btn" data-cam="orbit">Orbit</button>
+        <button id="cam-top" type="button" class="cam-btn" data-cam="top">Top</button>
+      </div>
+      <p class="hint orbit-hint">Orbit: drag · scroll to zoom</p>
+    </section>
+
+    <section class="panel">
+      <h2>Quantum AI</h2>
+      <div class="quantum-display">
+        <div class="q-bar-row">
+          <span>Path optimiser</span>
+          <div class="q-bar">
+            <div class="q-fill" id="q-path" style="width:78%"></div>
+          </div>
+          <span class="q-pct">78%</span>
+        </div>
+        <div class="q-bar-row">
+          <span>Energy model</span>
+          <div class="q-bar">
+            <div class="q-fill" id="q-energy" style="width:62%"></div>
+          </div>
+          <span class="q-pct">62%</span>
+        </div>
+        <div class="q-bar-row">
+          <span>Hazard detect</span>
+          <div class="q-bar">
+            <div class="q-fill" id="q-hazard" style="width:91%"></div>
+          </div>
+          <span class="q-pct">91%</span>
+        </div>
+      </div>
+    </section>
+  </aside>
+
+  <!-- ── STATUS BAR ────────────────────────────────────────── -->
+  <footer class="status-bar" role="contentinfo">
+    <span class="status-dot"></span>
+    <span id="status-msg">Click here, then press W to drive forward · WASD / Arrow keys</span>
+    <span class="sep">|</span>
+    <span>ROS2: <code>ros2 launch rover_simulation simulation_launch.py</code></span>
+  </footer>
+
+  <script src="lib/three.min.js"></script>
+  <script src="js/sim.js"></script>
+  <script>
+    // Speed slider label
+    var sl = document.getElementById("speed-slider");
+    var sv = document.getElementById("speed-val");
+    if (sl && sv) sl.addEventListener("input", function () { sv.textContent = parseFloat(sl.value).toFixed(2); });
+
+    // Mode badge
+    document.querySelectorAll(".tab").forEach(function (t) {
+      t.addEventListener("click", function () {
+        var b = document.getElementById("badge-mode");
+        if (b) b.textContent = t.dataset.mode.toUpperCase();
+        document.querySelectorAll(".tab").forEach(function (x) { x.setAttribute("aria-selected", "false"); });
+        t.setAttribute("aria-selected", "true");
+      });
+    });
+
+    // Mini-map
+    var canvas = document.getElementById("minimap");
+    var ctx = canvas ? canvas.getContext("2d") : null;
+    function drawMinimap() {
+      if (!ctx) return;
+      var W = 176, H = 176, scale = 6;
+      ctx.fillStyle = "#0a0c14";
+      ctx.fillRect(0, 0, W, H);
+      // grid
+      ctx.strokeStyle = "rgba(255,255,255,0.05)";
+      ctx.lineWidth = 0.5;
+      for (var g = 0; g < W; g += 22) { ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, H); ctx.stroke(); }
+      for (var g2 = 0; g2 < H; g2 += 22) { ctx.beginPath(); ctx.moveTo(0, g2); ctx.lineTo(W, g2); ctx.stroke(); }
+      // goal
+      var gx = W / 2 + 8 * scale, gz = H / 2 + (-4) * scale;
+      ctx.fillStyle = "#ff6600";
+      ctx.beginPath(); ctx.arc(gx, gz, 5, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = "rgba(255,102,0,0.2)";
+      ctx.beginPath(); ctx.arc(gx, gz, 12, 0, Math.PI * 2); ctx.fill();
+      requestAnimationFrame(drawMinimap);
+    }
+    drawMinimap();
+  </script>
+</body>
+
+</html>
