@@ -31,11 +31,31 @@ with a Jetson Nano, for a later phase.
 
 - **Phase 1 (planning) and Phase 2 (environment setup): done.**
 - The Gazebo rover simulation (terrain + rover physics + movement) is
-  **working** — see `src/rover_simulation`.
-- `sensor_pkg`: implemented (LiDAR/IMU/encoder processing nodes).
+  **working** — see `src/rover_simulation`. The rover is defined as an inline
+  SDF model in the world file (generated from the URDF/Xacro), which ensures
+  all plugins (DiffDrive, JointStatePublisher) initialize correctly at world
+  load. Odometry (`/odom`), joint states (`/joint_states`), and TF are all
+  bridged to ROS2 and verified publishing.
+- `sensor_pkg`: implemented (LiDAR/IMU/encoder processing nodes), all three
+  nodes launch and run cleanly.
 - `mapping_pkg`, `planning_pkg`, `navigation_pkg`, `evaluation_pkg`: scaffolded
   (standard ROS2 package structure in place), implementation not yet started.
 - `quantum/notebooks`: QAOA/Qiskit experimentation, not yet started.
+
+### Resolved issues (QA phase)
+
+- **`scripts/diagnose.py` hardcoded path** — replaced machine-specific absolute
+  path with a portable `os.path.join(os.path.dirname(__file__), ...)` lookup.
+- **`sensor_pkg` nodes not executable** — added missing `#!/usr/bin/env python3`
+  shebangs and `chmod +x` to all three processing scripts.
+- **Rover odometry not publishing** — root cause: the world file used a static
+  `model://lunar_rover` include that loaded a stale, pre-built SDF from
+  Gazebo's model cache, disconnected from the corrected URDF/Xacro. Fixed by
+  generating SDF from Xacro and inlining the `<model>` block directly into
+  `lunar_terrain.world`.
+- **`/joint_states` not publishing** — same root cause: `JointStatePublisher`
+  requires joint entities at world-init time. Resolved by the same inline-SDF
+  fix, plus a new `/joint_states` entry in `bridge.yaml`.
 
 ## Folder structure
 
@@ -47,7 +67,7 @@ lunar-rover-quantum/
 │   ├── planning_pkg/        # graph builder, energy model, classical planner
 │   ├── navigation_pkg/      # path executor, ROS2/motor integration
 │   ├── evaluation_pkg/      # battery monitor, comparison metrics
-│   └── rover_simulation/    # URDF/Xacro, Gazebo worlds, launch files
+│   └── rover_simulation/    # URDF/Xacro, Gazebo world (inline SDF), launch files
 ├── quantum/notebooks/       # QAOA/Qiskit experiments
 ├── docs/
 │   ├── report/
