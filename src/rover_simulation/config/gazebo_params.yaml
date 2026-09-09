@@ -1,3 +1,0 @@
-gazebo_ros:
-  default_plugin_path: /usr/lib/gazebo-11/plugins
-  use_sim_time: true

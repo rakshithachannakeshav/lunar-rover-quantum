@@ -7,6 +7,7 @@ install(PROGRAMS
   sensor_pkg/lidar_processor.py
   sensor_pkg/imu_processor.py
   sensor_pkg/encoder_processor.py
+  sensor_pkg/diff_drive_odometry.py
   DESTINATION lib/${PROJECT_NAME}
 )
 
