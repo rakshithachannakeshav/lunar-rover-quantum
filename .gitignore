@@ -1,20 +1,36 @@
+# ROS 2 / colcon
 build/
 install/
 log/
 
+# Python
 *.pyc
 __pycache__/
 *.egg-info/
-
+.pytest_cache/
 .venv/
 venv/
 
+# ROS bags / logs
 *.bag
 *.log
 
+# Jupyter / editors
 .ipynb_checkpoints/
 .vscode/
 
+# OS
 .DS_Store
 Thumbs.db
+
+# Agent scratch
 CLAUDE.md
+scratch/
+
+# Generated run outputs (keep the folders via .gitkeep)
+results/terrain_maps/*.npz
+results/terrain_maps/*.json
+results/classical_paths/*
+results/quantum_paths/*
+results/energy_comparison/*
+!results/**/.gitkeep
