@@ -25,9 +25,9 @@ LAYER 1 — PERCEPTION            (src/sensor_pkg)
 LAYER 2 — MAPPING & PLANNING    (src/mapping_pkg, src/planning_pkg)
   /scan + TF           -> occupancy_grid_node    -> /map
   /map + /scan         -> terrain_classifier_node-> /terrain_map (+ markers, .npz)
-  /terrain_map         -> graph_builder          -> /graph/weighted   (Phase 6)
-  /graph/weighted      -> classical_planner      -> /path/classical   (Phase 7)
-  /graph/weighted      -> quantum_optimizer      -> /path/quantum     (Phase 8)
+  terrain_maps/latest.npz -> graph_model (CLI)   -> graphs/latest.graphml (done)
+  graphs/latest.graphml   -> classical_planner    -> /path/classical   (Phase 7)
+  graphs/latest.graphml   -> quantum_optimizer    -> /path/quantum     (Phase 8)
 
 LAYER 3 — EXECUTION             (src/navigation_pkg)
   /path/*              -> path_executor          -> /cmd_vel          (Phase 9)
@@ -45,7 +45,7 @@ LAYER 4 — EVALUATION            (src/evaluation_pkg)
 | `encoder_processor` | sensor_pkg | `/odom` | `/joint_states` | done |
 | `occupancy_grid_node` | mapping_pkg | `/map`, static `map->odom` TF | `/scan`, TF | done |
 | `terrain_classifier_node` | mapping_pkg | `/terrain_map`, `/terrain_map_markers` | `/map`, `/scan` | done |
-| `graph_builder` | planning_pkg | `/graph/weighted` | `/terrain_map` | **not built** |
+| `graph_builder` | planning_pkg | `results/graphs/latest.graphml` (file, offline) | `results/terrain_maps/latest.npz` | done |
 | `classical_planner` | planning_pkg | `/path/classical` | `/graph/weighted` | **not built** |
 | `quantum_optimizer` | planning_pkg / quantum | `/path/quantum` | `/graph/weighted` | **not built** |
 | `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical` | **not built** |
@@ -273,7 +273,7 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 
 | # | Phase | Deliverable | Key approach |
 |---|---|---|---|
-| 6 | Energy modeling | `/graph/weighted` — a NetworkX graph of `/terrain_map` with `E(edge)` weights (formula in §6) | `graph_builder` node in `planning_pkg`; 4- or 8-connected grid graph; obstacle cells → no edge; load `latest.npz` offline for dev |
+| 6 | Energy modeling — **done** | `results/graphs/latest.graphml` — a NetworkX graph of the terrain snapshot with `E(edge)` weights (formula in §6) | `planning_pkg.graph_model` (offline module + CLI); 8-connected coarsened grid graph; obstacle/unknown cells → no node |
 | 7 | Classical planning | `/path/classical` + energy total | Dijkstra and A* over the weighted graph; publish `nav_msgs/Path`; record energy + length |
 | 8 | Quantum optimization | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
 | 9 | Integration | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a simple pure-pursuit / go-to-goal controller |
@@ -281,10 +281,14 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 | 11 | Real robot | rover driving lunar-like terrain on the Arjuna kit | ROS 2 on Jetson Nano; Arduino motor bridge; replace Gazebo topics with hardware drivers |
 | 12 | Docs & report | final report, slides, paper draft | — |
 
-**Recommended next task:** Phase 6 `graph_builder`. It has a clean offline input
-(`results/terrain_maps/latest.npz`), a defined output contract, and unblocks both
-planners. Start with a pure-Python module (`planning_pkg/planning_pkg/graph_model.py`)
-with unit tests in `tests/`, then wrap it in a node.
+Phase 6 is done: `planning_pkg.graph_model` (`python -m planning_pkg.graph_model`)
+builds `results/graphs/latest.graphml` from a terrain snapshot + `worlds/heightmap.png`.
+See `docs/PROGRESS.md` for details and `docs/superpowers/specs/2026-09-11-phase6-energy-graph-design.md`
+for the design.
+
+**Recommended next task:** Phase 7 `classical_planner`. Load
+`results/graphs/latest.graphml` via `graph_model.load_graph`, implement
+Dijkstra and A* over it, and publish/save the result as `/path/classical`.
 
 ---
 
