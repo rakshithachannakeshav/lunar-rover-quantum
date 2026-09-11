@@ -184,11 +184,17 @@ class OccupancyGridNode(Node):
 
         angle = msg.angle_min
         for distance in msg.ranges:
-            if math.isnan(distance) or math.isinf(distance) or distance < msg.range_min:
+            # NaN / Inf / at-or-beyond range_max = the beam hit nothing. Still
+            # trace it as a clearing ray to range_max (free space), just don't
+            # place an obstacle at the end. Only a genuine below-min reading is
+            # dropped as unreliable.
+            no_return = (math.isnan(distance) or math.isinf(distance)
+                         or distance >= msg.range_max)
+            if not no_return and distance < msg.range_min:
                 angle += msg.angle_increment
                 continue
 
-            is_max = distance >= msg.range_max
+            is_max = no_return
             effective_dist = msg.range_max if is_max else distance
 
             px = effective_dist * math.cos(angle)

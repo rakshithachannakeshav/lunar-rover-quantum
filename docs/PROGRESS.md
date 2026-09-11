@@ -18,12 +18,13 @@ Last verified: **2026-09-10**, Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 8.15
 | 3 | Simulation | **done, verified** | `simulation_launch.py` brings up gz server + bridge + RSP; rover drives on `/cmd_vel` (measured −2 m → +11 m); `/odom`, `/tf`, `/joint_states` bridged |
 | 4 | Sensors | **done, verified** | `/scan` 10 Hz (`frame_id: lidar_link`, finite ranges), `/imu/data` 50 Hz; `lidar_processor` / `imu_processor` / `encoder_processor` run; odometry uses real diff-drive kinematics (unit-tested) |
 | 5 | Mapping | **done, verified** | `occupancy_grid_node` → `/map` 600×600 @ 0.05 m; `terrain_classifier_node` → `/terrain_map` + markers; `results/terrain_maps/latest.npz` written; renders in RViz; 13 pure-Python unit tests pass |
-| 6–12 | Energy model → Docs | **not started** | `planning_pkg`, `navigation_pkg`, `evaluation_pkg`, `quantum/` are scaffolding only |
+| 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 new pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 (min matches the flat/zero-slope closed form exactly; max reflects real heightmap relief) |
+| 7–12 | Classical planning → Docs | **not started** | `navigation_pkg`, `evaluation_pkg`, `quantum/` are scaffolding only |
 
 Pure-Python check (runs anywhere, no ROS):
 
 ```bash
-python3 -m pytest -q            # 13 passed
+python3 -m pytest -q            # 26 passed
 python3 -m compileall -q src scripts tests
 ```
 
@@ -79,6 +80,54 @@ the mapping pipeline had no input and the rover could not move.
 The Phase 5 nodes (`occupancy_grid_node`, `terrain_classifier_node`,
 `grid_utils.py`, `terrain_storage.py`) were already correct; they were only
 starved of `/scan`. They now run end to end.
+
+### planning_pkg — Phase 6 energy-weighted graph
+
+New `src/planning_pkg/planning_pkg/graph_model.py` — a pure-Python module (no
+`rclpy`) that turns a Phase-5 terrain snapshot into an energy-weighted
+NetworkX graph for Phases 7/8 to consume:
+
+- `load_terrain_map(npz_path)` — reads `results/terrain_maps/latest.npz`
+  (same fields `mapping_pkg.terrain_storage.TerrainStorage` writes).
+- `coarsen(grid, cell_stride)` — aggregates the 600×600 @ 0.05 m occupancy
+  grid into `cell_stride × cell_stride` blocks (default stride 10 → 0.5 m
+  spacing), one value per block: any obstacle cell in the block → block is
+  obstacle (safety-first, never averaged away); else majority `-1` → block is
+  unknown; else majority vote among `{10, 50, 90}`, ties broken toward the
+  higher-cost (safer) class.
+- `sample_elevation(heightmap_png_path, world_x, world_y)` — nearest-pixel
+  sample of `worlds/heightmap.png` (world x, y ∈ [-75, 75] over the image),
+  `z = (pixel16 / 65535) * 10.0 - 5.0`, matching
+  `scripts/heightmap_to_collision_obj.py`. Used because the live sim terrain
+  is currently flat (DART heightmap-collision limitation, see §3 issue 2) —
+  `heightmap.png` remains the elevation source of record independent of what
+  physics collision is active.
+- `build_graph(...)` — one node per traversable block (`pos_x`, `pos_y`,
+  `terrain_class`, `terrain_factor`), 8-connected edges between traversable
+  neighbours, weight `E = d * S(theta) * T_avg` where `d` is block-centre
+  distance, `S(theta) = 1.0 + 2.0 * |sin(theta)|` with
+  `theta = atan2(|z_j - z_i|, d)`, and `T_avg` is the mean of the two
+  endpoint terrain factors (`{10: 1.0, 50: 1.5, 90: 3.0}`). No separate
+  roughness multiplier — the terrain class already encodes Phase 5's
+  roughness/crater signal, so a second multiplier would double-count it.
+- `save_graph(G, out_dir, meta)` / `load_graph(graphml_path)` — file-based
+  output, `results/graphs/latest.graphml` (NetworkX native) +
+  `results/graphs/latest_meta.json` (node/edge counts, weight min/max/mean,
+  resolution, cell stride, source timestamp, generation timestamp), mirroring
+  `terrain_storage.py`'s `latest.npz`/`latest_meta.json` pattern. No custom
+  ROS message — Phase 7/8 just load the file.
+- CLI: `python -m planning_pkg.graph_model --npz <path> --heightmap <path>
+  --out <dir> [--cell-stride N]`. Runs standalone, no ROS2 required.
+
+`requirements.txt` gained `Pillow>=10.0.0` (already an undeclared transitive
+dependency via `scripts/heightmap_to_collision_obj.py`); `planning_pkg/package.xml`
+gained `exec_depend`s on `python3-networkx`, `python3-numpy`, `python3-pil`.
+13 new unit tests in `tests/test_graph_model.py` (coarsen majority/obstacle/
+unknown/tie rules, elevation sampling + edge clamping, graph node exclusion +
+weight formula + attrs, save/load round-trip including the empty-graph case,
+CLI end-to-end). Verified with a synthetic `.npz` smoke test (60×60 grid,
+stride 5, `worlds/heightmap.png`) since this dev machine has no real
+Gazebo-produced `results/terrain_maps/latest.npz`.
 
 ### Codebase cleanup
 
@@ -138,13 +187,12 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 5. Next steps
 
-1. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
+1. **Phase 7 — `classical_planner`** (`planning_pkg`): load
+   `results/graphs/latest.graphml` via `graph_model.load_graph`, implement
+   Dijkstra + A*, publish/save `/path/classical`.
+2. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
    running sim. Deliverable: `mapping_params.yaml` values that give a sane
    flat/rocky/crater/obstacle split, plus a note in this file.
-2. **Phase 6 — `graph_builder`** (`planning_pkg`). Offline input is
-   `results/terrain_maps/latest.npz`; output contract is `/graph/weighted` with
-   `E(edge)` weights (README §6, §8). Build a pure-Python `graph_model.py` with
-   `tests/` first, then the node.
 3. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
    (issue 3).
 
@@ -152,7 +200,7 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 6. Picking this up — quick orientation for the next agent
 
-- **Run the pure-Python tests first** (`python3 -m pytest -q`, 13 pass) — fastest
+- **Run the pure-Python tests first** (`python3 -m pytest -q`, 26 pass) — fastest
   confidence check, no ROS needed.
 - **To bring the sim up:** README §4–§5. On WSL, always `export
   LIBGL_ALWAYS_SOFTWARE=1` first.

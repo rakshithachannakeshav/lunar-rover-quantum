@@ -16,14 +16,21 @@ occupancy_grid_node:
 
 terrain_classifier_node:
   ros__parameters:
+    # Roughness -> rocky(50). On the flat sim terrain the LiDAR only returns off
+    # rock edges, so rocky cells are inherently sparse; a lower threshold + wider
+    # window squeeze a bit more signal out. Revisit when contour terrain is back.
     roughness_window: 5
-    roughness_threshold: 0.02
-    crater_min_radius_px: 8
-    crater_max_radius_px: 80
-    hough_dp: 1.2
-    hough_param1: 50.0
-    hough_param2: 20.0
-    hough_min_dist: 15.0
+    roughness_threshold: 0.005
+    # Hough crater detection -> crater_interior(90). The flat sim world has NO
+    # real craters, so these are tuned strict enough to fire ~never (was flooding
+    # ~87% of the map with false positives on the rock field). Loosen again once
+    # a heightmap/Bullet contour terrain is in use.
+    crater_min_radius_px: 25
+    crater_max_radius_px: 55
+    hough_dp: 1.5
+    hough_param1: 90.0
+    hough_param2: 50.0
+    hough_min_dist: 80.0
     viz_downsample: 3
     classification_rate: 1.0
     save_interval_sec: 10.0
