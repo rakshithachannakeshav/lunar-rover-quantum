@@ -26,7 +26,7 @@ LAYER 2 — MAPPING & PLANNING    (src/mapping_pkg, src/planning_pkg)
   /scan + TF           -> occupancy_grid_node    -> /map
   /map + /scan         -> terrain_classifier_node-> /terrain_map (+ markers, .npz)
   terrain_maps/latest.npz -> graph_model (CLI)   -> graphs/latest.graphml (done)
-  graphs/latest.graphml   -> classical_planner    -> /path/classical   (Phase 7)
+  graphs/latest.graphml   -> classical_planner    -> /path/classical   (done)
   graphs/latest.graphml   -> quantum_optimizer    -> /path/quantum     (Phase 8)
 
 LAYER 3 — EXECUTION             (src/navigation_pkg)
@@ -46,7 +46,7 @@ LAYER 4 — EVALUATION            (src/evaluation_pkg)
 | `occupancy_grid_node` | mapping_pkg | `/map`, static `map->odom` TF | `/scan`, TF | done |
 | `terrain_classifier_node` | mapping_pkg | `/terrain_map`, `/terrain_map_markers` | `/map`, `/scan` | done |
 | `graph_builder` | planning_pkg | `results/graphs/latest.graphml` (file, offline) | `results/terrain_maps/latest.npz` | done |
-| `classical_planner` | planning_pkg | `/path/classical` | `/graph/weighted` | **not built** |
+| `classical_planner` | planning_pkg | `/path/classical`, `/path/classical/dijkstra` | `results/graphs/latest.graphml` | done |
 | `quantum_optimizer` | planning_pkg / quantum | `/path/quantum` | `/graph/weighted` | **not built** |
 | `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical` | **not built** |
 | `battery_monitor` | evaluation_pkg | `/battery/status` | `/cmd_vel`, `/odom` | **not built** |
@@ -178,10 +178,42 @@ ros2 launch mapping_pkg mapping.launch.py
 #   -> /map (600x600 @ 0.05 m), /terrain_map, /terrain_map_markers
 #   -> writes results/terrain_maps/latest.npz every ~10 s
 
-# 6. Visualise
+# 6. Energy-weighted graph generation (Phase 6)
+python3 -m planning_pkg.graph_model \
+  --npz results/terrain_maps/latest.npz \
+  --heightmap src/rover_simulation/worlds/heightmap.png \
+  --out results/graphs --cell-stride 5
+#   -> writes results/graphs/latest.graphml + latest_meta.json
+
+# 7. Classical path planning (Phase 7)
+# Note: Ensure you are in the workspace root directory. Requires results/graphs/latest.graphml.
+
+# Mode A: ROS 2 node mode (requires build & sourced overlay)
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install
+source install/setup.bash
+ros2 launch planning_pkg classical_planner.launch.py goal_x:=1.5 goal_y:=1.5
+#   -> publishes /path/classical (canonical A*) & /path/classical/dijkstra (debug)
+#   -> writes results/paths/latest_classical.json + timestamped copy
+
+# Mode B: Standalone CLI mode (zero ROS build/underlay needed)
+# Linux / WSL:
+PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
+# Windows PowerShell:
+# $env:PYTHONPATH="src/planning_pkg"; python -m planning_pkg.classical_planning --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
+
+# 8. Visualise & Verify Phase 7 Results
+# Visualisation Option A: Quick 2D Plot (standalone, no Gazebo/RViz needed)
+python3 scripts/visualize_plan.py
+# (or in Windows: python scripts/visualize_plan.py)
+#   -> writes results/paths/latest_classical_plot.png with A* vs Dijkstra overlay & metrics
+
+# Visualisation Option B: 3D RViz2 Simulation (live ROS 2 topics)
 ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true
-#   RViz: Fixed Frame = map; add Map /map, Map /terrain_map, MarkerArray
-#         /terrain_map_markers, LaserScan /scan, RobotModel (/robot_description)
+#   In RViz: Fixed Frame = map; add displays:
+#         Path /path/classical (A* optimal), Path /path/classical/dijkstra (Dijkstra debug),
+#         Map /map, Map /terrain_map, MarkerArray /terrain_map_markers,
+#         LaserScan /scan, RobotModel (/robot_description)
 # or the Gazebo GUI:  bash scripts/open_gazebo_gui.sh   (then right-click rover -> Follow)
 ```
 
@@ -236,6 +268,16 @@ E(edge) = d · S(θ) · T(type) · R(r)
   R(r)   = 1.0 + r                      roughness factor, r ∈ [0,1] from LiDAR variance
 ```
 
+### Classical path planning outputs (Phase 7 contract)
+
+- `/path/classical` (`nav_msgs/msg/Path`, `TransientLocal` QoS): Canonical optimal energy path computed via A* for Layer 3 execution (`path_executor` in Phase 9).
+- `/path/classical/dijkstra` (`nav_msgs/msg/Path`, `TransientLocal` QoS): Debug path computed via Dijkstra for side-by-side RViz inspection.
+- `results/paths/latest_classical.json`: Canonical latest planner run metrics:
+  - `"dijkstra"`: `path_nodes`, `path_coords`, `total_energy`, `total_distance_m`, `num_waypoints`, `runtime_ms`, `timestamp`.
+  - `"astar"`: `path_nodes`, `path_coords`, `total_energy`, `total_distance_m`, `num_waypoints`, `runtime_ms`, `timestamp`.
+  - `"comparison"`: `energy_delta`, `abs_energy_delta`, `distance_delta_m`, `runtime_delta_ms`, `speedup_factor`, `paths_identical`.
+- `results/paths/classical_<timestamp>.json`: Timestamped history copy.
+
 ---
 
 ## 7. Assumptions & constraints
@@ -274,7 +316,7 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 | # | Phase | Deliverable | Key approach |
 |---|---|---|---|
 | 6 | Energy modeling — **done** | `results/graphs/latest.graphml` — a NetworkX graph of the terrain snapshot with `E(edge)` weights (formula in §6) | `planning_pkg.graph_model` (offline module + CLI); 8-connected coarsened grid graph; obstacle/unknown cells → no node |
-| 7 | Classical planning | `/path/classical` + energy total | Dijkstra and A* over the weighted graph; publish `nav_msgs/Path`; record energy + length |
+| 7 | Classical planning — **done** | `/path/classical` + energy total | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra and A* over weighted graph; publishes `nav_msgs/Path`; writes `results/paths/latest_classical.json` |
 | 8 | Quantum optimization | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
 | 9 | Integration | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a simple pure-pursuit / go-to-goal controller |
 | 10 | Evaluation | plots: energy classical vs quantum, path efficiency, runtime | `battery_monitor` (integrate power ∝ `|v|` + turn cost), `evaluator` node, matplotlib comparison scripts under `scripts/` |
@@ -286,9 +328,17 @@ builds `results/graphs/latest.graphml` from a terrain snapshot + `worlds/heightm
 See `docs/PROGRESS.md` for details and `docs/superpowers/specs/2026-09-11-phase6-energy-graph-design.md`
 for the design.
 
-**Recommended next task:** Phase 7 `classical_planner`. Load
-`results/graphs/latest.graphml` via `graph_model.load_graph`, implement
-Dijkstra and A* over it, and publish/save the result as `/path/classical`.
+Phase 7 is done: `planning_pkg.classical_planning` (`PYTHONPATH=src/planning_pkg python -m planning_pkg.classical_planning`)
+and `classical_planner_node` compute energy-optimal routes via Dijkstra and A*,
+publishing canonical `/path/classical` (`nav_msgs/msg/Path`) and persisting
+`results/paths/latest_classical.json`. Visualize via `python scripts/visualize_plan.py`
+or in RViz. See `docs/PROGRESS.md` and
+`docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`.
+
+**Recommended next task:** Phase 8 `quantum_optimizer`. Load
+`results/graphs/latest.graphml` via `load_weighted_graph`, optionally load
+`results/paths/latest_classical.json` for a baseline to beat, formulate path choice
+as a QUBO, and solve using QAOA via Qiskit AerSimulator, publishing `/path/quantum`.
 
 ---
 

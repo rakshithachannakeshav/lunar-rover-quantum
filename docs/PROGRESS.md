@@ -18,13 +18,14 @@ Last verified: **2026-09-10**, Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 8.15
 | 3 | Simulation | **done, verified** | `simulation_launch.py` brings up gz server + bridge + RSP; rover drives on `/cmd_vel` (measured −2 m → +11 m); `/odom`, `/tf`, `/joint_states` bridged |
 | 4 | Sensors | **done, verified** | `/scan` 10 Hz (`frame_id: lidar_link`, finite ranges), `/imu/data` 50 Hz; `lidar_processor` / `imu_processor` / `encoder_processor` run; odometry uses real diff-drive kinematics (unit-tested) |
 | 5 | Mapping | **done, verified** | `occupancy_grid_node` → `/map` 600×600 @ 0.05 m; `terrain_classifier_node` → `/terrain_map` + markers; `results/terrain_maps/latest.npz` written; renders in RViz; 13 pure-Python unit tests pass |
-| 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 new pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 (min matches the flat/zero-slope closed form exactly; max reflects real heightmap relief) |
-| 7–12 | Classical planning → Docs | **not started** | `navigation_pkg`, `evaluation_pkg`, `quantum/` are scaffolding only |
+| 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 |
+| 7 | Classical planning | **done, verified** | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra + A* path planning over `latest.graphml`; 14 new pure-Python unit tests (40 total pass); publishes `/path/classical` and `/path/classical/dijkstra`; writes `results/paths/latest_classical.json` |
+| 8–12 | Quantum optimization → Docs | **not started** | `navigation_pkg`, `evaluation_pkg`, `quantum/` are scaffolding only |
 
 Pure-Python check (runs anywhere, no ROS):
 
 ```bash
-python3 -m pytest -q            # 26 passed
+python3 -m pytest -q            # 40 passed
 python3 -m compileall -q src scripts tests
 ```
 
@@ -129,6 +130,27 @@ CLI end-to-end). Verified with a synthetic `.npz` smoke test (60×60 grid,
 stride 5, `worlds/heightmap.png`) since this dev machine has no real
 Gazebo-produced `results/terrain_maps/latest.npz`.
 
+### planning_pkg — Phase 7 classical path planning (Dijkstra + A*)
+
+New `src/planning_pkg/planning_pkg/classical_planning.py` and `classical_planner_node.py`:
+- `classical_planning.py` (pure Python, zero `rclpy` imports):
+  - `load_weighted_graph(path)`: Reuses Phase 6 `graph_model.load_graph`.
+  - `resolve_node(graph, x, y)`: Snaps continuous world coordinates to nearest graph node via Euclidean distance with a 5× bounding box threshold sanity check.
+  - `run_dijkstra(graph, start, goal)`: Uniform-cost exact shortest path via `networkx.dijkstra_path`.
+  - `run_astar(graph, start, goal)`: Heuristic search via `networkx.astar_path` using straight-line Euclidean distance heuristic $h(u) = \|u - \text{goal}\|_2$ (admissible and consistent because all edge energy multipliers $S(\theta) \ge 1.0$, $T_{avg} \ge 1.0$).
+  - Catches `networkx.NetworkXNoPath` and raises descriptive `ValueError` naming start/goal.
+  - `PlanResult` dataclass storing algorithm, path nodes, world coordinates, energy, distance, waypoints, runtime, timestamp.
+  - `compare()`: Generates JSON-serializable comparison dictionary (energy delta, distance delta, runtime delta, `paths_identical`).
+  - `save_plan_results()`: Writes `results/paths/latest_classical.json` + timestamped history.
+  - Standalone CLI: `python -m planning_pkg.classical_planning --start-x <x> --start-y <y> --goal-x <gx> --goal-y <gy> [--graph <path>] [--out <dir>]`.
+- `classical_planner_node.py` (ROS 2 `rclpy` node wrapper):
+  - Publishes canonical A* path on `/path/classical` (`nav_msgs/msg/Path`) with `TransientLocal` QoS for late subscribers.
+  - Publishes debug Dijkstra path on `/path/classical/dijkstra` (`nav_msgs/msg/Path`) for RViz comparison.
+  - Declares parameters: `graph_path`, `start_x`, `start_y`, `goal_x`, `goal_y`, `frame_id`, `out_dir`, `save_results`.
+  - Logs one-line human-readable summary at INFO level.
+- `launch/classical_planner.launch.py`: Launch description for node and arguments.
+- 14 new pure-Python unit tests in `tests/test_classical_planning.py` (40 total passing).
+
 ### Codebase cleanup
 
 Removed dead/superseded: `scratch/`, `src/rover_simulation/models/` (world inlines
@@ -182,35 +204,41 @@ See README §7 for the full list. The ones that mattered here:
 - DART ignores `<heightmap>` collision; DART+ODE trimesh collision segfaults.
 - `sensor_pkg` ships flat scripts, not an importable package.
 - The rover is inlined in the world; the Xacro is TF-only.
+- **Phase 7 limitations:** Waypoint orientations in `PoseStamped` are set to identity
+  quaternions; heading calculation between waypoints is deferred to Phase 9 `path_executor`.
+  Replanning is startup-only; on-demand replanning via action/service will be added in Phase 9.
 
 ---
 
 ## 5. Next steps
 
-1. **Phase 7 — `classical_planner`** (`planning_pkg`): load
-   `results/graphs/latest.graphml` via `graph_model.load_graph`, implement
-   Dijkstra + A*, publish/save `/path/classical`.
-2. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
+1. **Phase 8 — `quantum_optimizer`** (`planning_pkg` / `quantum`): load
+   `results/graphs/latest.graphml` via `load_weighted_graph`, formulate path
+   selection as a QUBO, solve via QAOA on Qiskit AerSimulator, compare with
+   `results/paths/latest_classical.json`, and publish `/path/quantum`.
+2. **Phase 9 — `path_executor`** (`navigation_pkg`): subscribe to `/path/classical`
+   or `/path/quantum` and generate `/cmd_vel` to follow waypoints.
+3. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
    running sim. Deliverable: `mapping_params.yaml` values that give a sane
    flat/rocky/crater/obstacle split, plus a note in this file.
-3. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
+4. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
    (issue 3).
 
 ---
 
 ## 6. Picking this up — quick orientation for the next agent
 
-- **Run the pure-Python tests first** (`python3 -m pytest -q`, 26 pass) — fastest
+- **Run the pure-Python tests first** (`python3 -m pytest -q`, 40 pass) — fastest
   confidence check, no ROS needed.
 - **To bring the sim up:** README §4–§5. On WSL, always `export
   LIBGL_ALWAYS_SOFTWARE=1` first.
-- **The authoritative sim definition is `src/rover_simulation/worlds/lunar_terrain.world`**
-  (the rover is inlined in it). `rover.urdf.xacro` only feeds
-  `robot_state_publisher`; keep sensor blocks mirrored in both but expect the
-  world file to be what actually loads.
-- **Mapping data contract:** README §6. `planning_pkg` should consume
-  `latest.npz` offline, not require a live `/terrain_map`.
-- **Design spec** for this line of work:
-  `docs/superpowers/specs/2026-09-09-complete-phases-1-5-design.md`.
-- **Gotchas:** DART/heightmap (README §7); `sensor_pkg` flat-script imports;
-  BEST_EFFORT QoS on `/scan`; the stale `~/lunar-rover-quantum` clone.
+- **Phase 7 Planner entry point:**
+  - CLI: `python -m planning_pkg.classical_planning --start-x 0 --start-y 0 --goal-x 10 --goal-y 10`
+  - ROS 2: `ros2 launch planning_pkg classical_planner.launch.py goal_x:=10.0 goal_y:=10.0`
+- **Output contracts:**
+  - `results/paths/latest_classical.json` (contains both Dijkstra & A* results + comparison)
+  - `/path/classical` (`nav_msgs/msg/Path`, published by A*)
+  - `/path/classical/dijkstra` (`nav_msgs/msg/Path`, debug)
+- **Design specs:**
+  - Phase 6: `docs/superpowers/specs/2026-09-11-phase6-energy-graph-design.md`
+  - Phase 7: `docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`
