@@ -30,6 +30,8 @@ scratch/
 # Generated run outputs (keep the folders via .gitkeep)
 results/terrain_maps/*.npz
 results/terrain_maps/*.json
+results/graphs/*
+results/paths/*
 results/classical_paths/*
 results/quantum_paths/*
 results/energy_comparison/*
