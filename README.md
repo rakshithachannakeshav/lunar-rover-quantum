@@ -335,11 +335,7 @@ publishing canonical `/path/classical` (`nav_msgs/msg/Path`) and persisting
 or in RViz. See `docs/PROGRESS.md` and
 `docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`.
 
-**Recommended next task:** Phase 8 `quantum_optimizer`. Load
-`results/graphs/latest.graphml` via `load_weighted_graph`, optionally load
-`results/paths/latest_classical.json` for a baseline to beat, formulate path choice
-as a QUBO, and solve using QAOA via Qiskit AerSimulator, publishing `/path/quantum`.
-
+**Phase 8 `quantum_optimizer` — Completed and validated.** The weighted graph is loaded from `results/graphs/latest.graphml`, the rover's actual start position is obtained from `/odom`, and path selection is formulated as a QUBO and solved using QAOA with Qiskit AerSimulator. The quantum solution is validated against the classical A* baseline, published on `/path/quantum`, and saved to `results/paths/latest_quantum.json`. The full pipeline was successfully tested in Gazebo with the rover following the generated quantum path to the final waypoint.
 ---
 
 ## 9. Troubleshooting
