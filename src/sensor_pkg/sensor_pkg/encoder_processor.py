@@ -19,8 +19,6 @@ from sensor_msgs.msg import JointState
 from nav_msgs.msg import Odometry
 from geometry_msgs.msg import Quaternion
 
-# sensor_pkg installs its nodes as flat scripts (ament_cmake), so this sibling
-# module is imported by bare name — it lands in the same lib/sensor_pkg/ dir.
 from diff_drive_odometry import integrate_pose, yaw_to_quaternion
 
 

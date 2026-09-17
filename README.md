@@ -47,8 +47,8 @@ LAYER 4 — EVALUATION            (src/evaluation_pkg)
 | `terrain_classifier_node` | mapping_pkg | `/terrain_map`, `/terrain_map_markers` | `/map`, `/scan` | done |
 | `graph_builder` | planning_pkg | `results/graphs/latest.graphml` (file, offline) | `results/terrain_maps/latest.npz` | done |
 | `classical_planner` | planning_pkg | `/path/classical`, `/path/classical/dijkstra` | `results/graphs/latest.graphml` | done |
-| `quantum_optimizer` | planning_pkg / quantum | `/path/quantum` | `/graph/weighted` | **not built** |
-| `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical` | **not built** |
+| `quantum_optimizer` | planning_pkg / quantum | `/path/quantum` | `/odom`, `results/graphs/latest.graphml` | done |
+| `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical`, `/odom` | done |
 | `battery_monitor` | evaluation_pkg | `/battery/status` | `/cmd_vel`, `/odom` | **not built** |
 | `evaluator` | evaluation_pkg | `/metrics` | `/path/*`, `/battery/status` | **not built** |
 
@@ -203,18 +203,33 @@ PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning --start-x
 # $env:PYTHONPATH="src/planning_pkg"; python -m planning_pkg.classical_planning --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
 
 # 8. Visualise & Verify Phase 7 Results
-# Visualisation Option A: Quick 2D Plot (standalone, no Gazebo/RViz needed)
+# 8. Quantum Path Optimization (Phase 8)
+# Mode A: ROS 2 node mode (requires graphml)
+ros2 launch planning_pkg quantum_optimizer.launch.py goal_x:=8.0 goal_y:=0.0
+
+# Mode B: Standalone Python CLI
+PYTHONPATH=src/planning_pkg python3 -m planning_pkg.quantum_optimizer \
+  --start-x 0.0 --start-y 0.0 --goal-x 8.0 --goal-y 0.0 \
+  --graph results/graphs/latest.graphml --max-edges 10 --shots 2048
+
+# 9. Full Navigation Pipeline & Path Executor (Phase 9)
+# Mode A: End-to-End Quantum Pipeline
+ros2 launch planning_pkg quantum_navigation.launch.py goal_x:=8.0 goal_y:=0.0
+
+# Mode B: Configurable Navigation Pipeline (Quantum or Classical)
+ros2 launch navigation_pkg navigation_pipeline.launch.py planner_mode:=quantum goal_x:=8.0 goal_y:=0.0
+
+# 10. Visualise & Verify Results
+# Visualisation Option A: 2D Plot Overlay (A* vs Quantum metrics)
 python3 scripts/visualize_plan.py
-# (or in Windows: python scripts/visualize_plan.py)
-#   -> writes results/paths/latest_classical_plot.png with A* vs Dijkstra overlay & metrics
+#   -> writes results/paths/latest_classical_plot.png
 
 # Visualisation Option B: 3D RViz2 Simulation (live ROS 2 topics)
 ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true
 #   In RViz: Fixed Frame = map; add displays:
-#         Path /path/classical (A* optimal), Path /path/classical/dijkstra (Dijkstra debug),
+#         Path /path/quantum (QAOA optimal), Path /path/classical (A* optimal),
 #         Map /map, Map /terrain_map, MarkerArray /terrain_map_markers,
 #         LaserScan /scan, RobotModel (/robot_description)
-# or the Gazebo GUI:  bash scripts/open_gazebo_gui.sh   (then right-click rover -> Follow)
 ```
 
 ### Web viewer (no Linux/ROS needed)
@@ -317,8 +332,8 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 |---|---|---|---|
 | 6 | Energy modeling — **done** | `results/graphs/latest.graphml` — a NetworkX graph of the terrain snapshot with `E(edge)` weights (formula in §6) | `planning_pkg.graph_model` (offline module + CLI); 8-connected coarsened grid graph; obstacle/unknown cells → no node |
 | 7 | Classical planning — **done** | `/path/classical` + energy total | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra and A* over weighted graph; publishes `nav_msgs/Path`; writes `results/paths/latest_classical.json` |
-| 8 | Quantum optimization | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
-| 9 | Integration | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a simple pure-pursuit / go-to-goal controller |
+| 8 | Quantum optimization — **done** | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
+| 9 | Integration — **done** | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a proportional controller; `navigation_pipeline.launch.py` runs end to end |
 | 10 | Evaluation | plots: energy classical vs quantum, path efficiency, runtime | `battery_monitor` (integrate power ∝ `|v|` + turn cost), `evaluator` node, matplotlib comparison scripts under `scripts/` |
 | 11 | Real robot | rover driving lunar-like terrain on the Arjuna kit | ROS 2 on Jetson Nano; Arduino motor bridge; replace Gazebo topics with hardware drivers |
 | 12 | Docs & report | final report, slides, paper draft | — |
@@ -335,7 +350,9 @@ publishing canonical `/path/classical` (`nav_msgs/msg/Path`) and persisting
 or in RViz. See `docs/PROGRESS.md` and
 `docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`.
 
-**Phase 8 is done:** `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` formulate path selection as a QUBO and solve via QAOA with Qiskit AerSimulator, using `/odom` for the start and publishing `/path/quantum` (`nav_msgs/msg/Path`) with results saved to `results/paths/latest_quantum.json`. Validated end-to-end in Gazebo with the rover following the quantum path to the final waypoint.
+Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` formulate path selection as a QUBO and solve via QAOA with Qiskit AerSimulator, using `/odom` for the start and publishing `/path/quantum` (`nav_msgs/msg/Path`) with results saved to `results/paths/latest_quantum.json`. See `PHASE8_README_ADDENDUM.md`.
+
+**Phase 9 is done:** `navigation_pkg.path_executor_node` (`path_executor`) subscribes to `/path/quantum` or `/path/classical` and `/odom`, translating waypoints into velocity commands on `/cmd_vel`. `navigation_pipeline.launch.py` connects the full pipeline end-to-end.
 
 ## 9. Troubleshooting
 

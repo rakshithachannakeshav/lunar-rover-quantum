@@ -15,6 +15,7 @@ install(PROGRAMS
   rover_simulation/rover_keyboard.py
   rover_simulation/rover_creep.py
   DESTINATION lib/${PROJECT_NAME}
+  PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
 install(FILES package.xml DESTINATION share/${PROJECT_NAME})

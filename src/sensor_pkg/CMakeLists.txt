@@ -9,6 +9,7 @@ install(PROGRAMS
   sensor_pkg/encoder_processor.py
   sensor_pkg/diff_drive_odometry.py
   DESTINATION lib/${PROJECT_NAME}
+  PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE GROUP_READ GROUP_EXECUTE WORLD_READ WORLD_EXECUTE
 )
 
 install(DIRECTORY launch/ DESTINATION share/${PROJECT_NAME}/launch)

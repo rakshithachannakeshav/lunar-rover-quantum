@@ -1,11 +1,7 @@
 import os
-from glob import glob
-
 from setuptools import find_packages, setup
 
-
 package_name = "navigation_pkg"
-
 
 setup(
     name=package_name,
@@ -19,7 +15,11 @@ setup(
         ("share/" + package_name, ["package.xml"]),
         (
             os.path.join("share", package_name, "launch"),
-            glob("launch/*.launch.py"),
+            [
+                "launch/navigation_pipeline.launch.py",
+                "launch/path_executor.launch.py",
+                "launch/quantum_path_executor.launch.py",
+            ],
         ),
     ],
     install_requires=["setuptools"],
@@ -31,8 +31,9 @@ setup(
     tests_require=["pytest"],
     entry_points={
         "console_scripts": [
-            "quantum_path_executor = "
-            "navigation_pkg.quantum_path_executor_node:main",
+            "path_executor = navigation_pkg.path_executor_node:main",
+            "quantum_path_executor = navigation_pkg.quantum_path_executor_node:main",
         ],
     },
+)
 )

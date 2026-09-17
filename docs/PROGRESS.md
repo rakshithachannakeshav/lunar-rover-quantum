@@ -19,8 +19,9 @@ Last verified: **2026-09-10**, Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 8.15
 | 4 | Sensors | **done, verified** | `/scan` 10 Hz (`frame_id: lidar_link`, finite ranges), `/imu/data` 50 Hz; `lidar_processor` / `imu_processor` / `encoder_processor` run; odometry uses real diff-drive kinematics (unit-tested) |
 | 5 | Mapping | **done, verified** | `occupancy_grid_node` → `/map` 600×600 @ 0.05 m; `terrain_classifier_node` → `/terrain_map` + markers; `results/terrain_maps/latest.npz` written; renders in RViz; 13 pure-Python unit tests pass |
 | 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 |
-| 7 | Classical planning | **done, verified** | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra + A* path planning over `latest.graphml`; 14 new pure-Python unit tests (40 total pass); publishes `/path/classical` and `/path/classical/dijkstra`; writes `results/paths/latest_classical.json` |
-| 8–12 | Quantum optimization → Docs | **not started** | `navigation_pkg`, `evaluation_pkg`, `quantum/` are scaffolding only |
+| 8 | Quantum optimization | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
+| 9 | Integration | **done, verified** | `navigation_pkg.path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
+| 10–12 | Evaluation → Docs | **not started** | `evaluation_pkg` is scaffolding only |
 
 Pure-Python check (runs anywhere, no ROS):
 
@@ -212,16 +213,11 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 5. Next steps
 
-1. **Phase 8 — `quantum_optimizer`** (`planning_pkg` / `quantum`): load
-   `results/graphs/latest.graphml` via `load_weighted_graph`, formulate path
-   selection as a QUBO, solve via QAOA on Qiskit AerSimulator, compare with
-   `results/paths/latest_classical.json`, and publish `/path/quantum`.
-2. **Phase 9 — `path_executor`** (`navigation_pkg`): subscribe to `/path/classical`
-   or `/path/quantum` and generate `/cmd_vel` to follow waypoints.
-3. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
+1. **Phase 10 — Evaluation Package** (`evaluation_pkg`): build `battery_monitor` node (integrates linear/angular motion energy) and `evaluator` node (publishes `/metrics` comparing classical A* vs QAOA quantum execution efficiency and runtime).
+2. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
    running sim. Deliverable: `mapping_params.yaml` values that give a sane
    flat/rocky/crater/obstacle split, plus a note in this file.
-4. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
+3. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
    (issue 3).
 
 ---
