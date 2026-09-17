@@ -1,0 +1,150 @@
+<?xml version="1.0"?>
+<sdf version="1.7">
+
+<world name="moon_world">
+
+  <physics name="1ms" type="ignored">
+    <max_step_size>0.001</max_step_size>
+    <real_time_factor>1.0</real_time_factor>
+  </physics>
+
+  <plugin
+    filename="gz-sim-physics-system"
+    name="gz::sim::systems::Physics">
+  </plugin>
+
+  <plugin
+    filename="gz-sim-user-commands-system"
+    name="gz::sim::systems::UserCommands">
+  </plugin>
+
+  <plugin
+    filename="gz-sim-scene-broadcaster-system"
+    name="gz::sim::systems::SceneBroadcaster">
+  </plugin>
+  
+  <plugin
+    filename="gz-sim-sensors-system"
+    name="gz::sim::systems::Sensors">
+  </plugin>
+
+  <plugin
+    filename="gz-sim-imu-system"
+    name="gz::sim::systems::Imu">
+  </plugin>
+
+  <light type="directional" name="sun">
+    <cast_shadows>true</cast_shadows>
+    <pose>0 0 100 0 0 0</pose>
+    <diffuse>0.95 0.90 0.80 1</diffuse>
+    <specular>0.2 0.2 0.2 1</specular>
+    <direction>-0.08 0.03 -1</direction>
+  </light>
+
+  <!-- Main Ground -->
+  <model name="ground">
+
+    <static>true</static>
+
+    <link name="link">
+
+      <collision name="collision">
+        <geometry>
+          <box>
+            <size>500 500 2</size>
+          </box>
+        </geometry>
+        <pose>0 0 -1 0 0 0</pose>
+      </collision>
+
+      <visual name="visual">
+        <geometry>
+          <box>
+            <size>500 500 2</size>
+          </box>
+        </geometry>
+
+        <material>
+          <ambient>0.72 0.66 0.55 1</ambient>
+          <diffuse>0.82 0.76 0.64 1</diffuse>
+        </material>
+
+        <pose>0 0 -1 0 0 0</pose>
+
+      </visual>
+
+    </link>
+
+  </model>
+
+  <!-- Dune 1 -->
+  <model name="dune1">
+
+    <static>true</static>
+    <pose>0 0 -30 0 0 0</pose>
+
+    <link name="link">
+
+      <collision name="collision">
+        <geometry>
+          <sphere>
+            <radius>35</radius>
+          </sphere>
+        </geometry>
+      </collision>
+
+      <visual name="visual">
+        <geometry>
+          <sphere>
+            <radius>35</radius>
+          </sphere>
+        </geometry>
+
+        <material>
+          <ambient>0.76 0.70 0.58 1</ambient>
+          <diffuse>0.82 0.76 0.64 1</diffuse>
+        </material>
+
+      </visual>
+
+    </link>
+
+  </model>
+
+  <!-- Dune 2 -->
+  <model name="dune2">
+
+    <static>true</static>
+    <pose>45 20 -35 0 0 0</pose>
+
+    <link name="link">
+
+      <collision name="collision">
+        <geometry>
+          <sphere>
+            <radius>40</radius>
+          </sphere>
+        </geometry>
+      </collision>
+
+      <visual name="visual">
+        <geometry>
+          <sphere>
+            <radius>40</radius>
+          </sphere>
+        </geometry>
+
+        <material>
+          <ambient>0.76 0.70 0.58 1</ambient>
+          <diffuse>0.82 0.76 0.64 1</diffuse>
+        </material>
+
+      </visual>
+
+    </link>
+
+  </model>
+
+</world>
+
+</sdf>

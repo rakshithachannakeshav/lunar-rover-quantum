@@ -7,7 +7,7 @@
   direction: GZ_TO_ROS
 
 - ros_topic_name: /cmd_vel
-  gz_topic_name: /cmd_vel
+  gz_topic_name: /model/lunar_rover/cmd_vel
   ros_type_name: geometry_msgs/msg/Twist
   gz_type_name: gz.msgs.Twist
   direction: ROS_TO_GZ
@@ -27,19 +27,4 @@
   gz_topic_name: /world/lunar_terrain/model/lunar_rover/joint_state
   ros_type_name: sensor_msgs/msg/JointState
   gz_type_name: gz.msgs.Model
-  direction: GZ_TO_ROS
-
-# Sensors (Phase 4/5) — LiDAR feeds sensor_pkg + mapping_pkg, IMU feeds imu_processor.
-# If `gz topic -l` shows these scoped (e.g. /world/lunar_terrain/model/lunar_rover/...),
-# update gz_topic_name to match.
-- ros_topic_name: /scan
-  gz_topic_name: /scan
-  ros_type_name: sensor_msgs/msg/LaserScan
-  gz_type_name: gz.msgs.LaserScan
-  direction: GZ_TO_ROS
-
-- ros_topic_name: /imu/data
-  gz_topic_name: /imu/data
-  ros_type_name: sensor_msgs/msg/Imu
-  gz_type_name: gz.msgs.IMU
   direction: GZ_TO_ROS

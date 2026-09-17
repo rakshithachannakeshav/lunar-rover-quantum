@@ -24,9 +24,6 @@ setup(
     license='MIT',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [
-            'classical_planner_node = planning_pkg.classical_planner_node:main',
-            'quantum_optimizer_node = planning_pkg.quantum_optimizer_node:main',
-        ],
+        'console_scripts': [],
     },
 )

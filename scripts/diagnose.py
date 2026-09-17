@@ -1,7 +1,8 @@
+import os
 import numpy as np
 from PIL import Image
 
-img = Image.open('/home/monisha/lunar-rover-quantum/lunar_rover_ws/src/rover_simulation/worlds/heightmap.png')
+img = Image.open(os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'rover_simulation', 'worlds', 'heightmap.png')))
 arr = np.array(img).astype(np.float32) / 65535.0
 print('PNG shape:', arr.shape, '| mode:', img.mode)
 print('H range:  %.4f -> %.4f' % (arr.min(), arr.max()))

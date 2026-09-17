@@ -1,5 +1,5 @@
-from glob import glob
 import os
+from glob import glob
 
 from setuptools import find_packages, setup
 
@@ -14,7 +14,6 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
-        (os.path.join('share', package_name, 'config'), glob('config/*')),
     ],
     install_requires=['setuptools'],
     zip_safe=True,
@@ -24,9 +23,6 @@ setup(
     license='MIT',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [
-            'occupancy_grid_node = mapping_pkg.occupancy_grid_node:main',
-            'terrain_classifier_node = mapping_pkg.terrain_classifier_node:main',
-        ],
+        'console_scripts': [],
     },
 )

@@ -4,12 +4,7 @@
 
 set -e
 source /opt/ros/jazzy/setup.bash
-WS_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-if [ -f "$WS_DIR/install/setup.bash" ]; then
-  WS="$WS_DIR"
-else
-  WS=~/lunar-rover-quantum
-fi
+WS=~/lunar-rover-quantum
 source "$WS/install/setup.bash"
 PKG="$WS/install/rover_simulation/share/rover_simulation"
 export GZ_SIM_RESOURCE_PATH="$PKG/worlds:$PKG/models"
