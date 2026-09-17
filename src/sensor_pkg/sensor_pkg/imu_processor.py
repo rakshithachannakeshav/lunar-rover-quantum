@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-#!/usr/bin/env python3
 import rclpy
 from rclpy.node import Node
 from sensor_msgs.msg import Imu
@@ -24,7 +23,7 @@ class IMUProcessor(Node):
         
         try:
             slope_angle = math.atan2(math.sqrt(ax**2 + ay**2), abs(az))
-        except:
+        except Exception:
             slope_angle = 0.0
             
         self.publisher.publish(Float32(data=float(slope_angle)))

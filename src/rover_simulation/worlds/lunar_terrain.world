@@ -26,6 +26,7 @@
   <plugin filename="gz-sim-scene-broadcaster-system" name="gz::sim::systems::SceneBroadcaster"/>
   <plugin filename="gz-sim-contact-system"           name="gz::sim::systems::Contact"/>
   <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher"/>
+  <plugin filename="gz-sim-imu-system"               name="gz::sim::systems::Imu"/>
   <plugin filename="gz-sim-sensors-system"           name="gz::sim::systems::Sensors">
     <render_engine>ogre2</render_engine>
   </plugin>
@@ -75,41 +76,46 @@
     <pose>0 0 0 0 0 0</pose>
     <link name="terrain_link">
 
-      <!-- VISUAL — rendered heightmap with lunar-grey diffuse colour -->
+      <!-- VISUAL — flat lunar plain at z = 0.375 m, flush with the box collision
+           top below. Was a <heightmap>, but DART can't collide against heightmaps
+           and DART+ODE trimesh collision segfaults, so the ground is flat and the
+           visual matches it. Rock models still provide relief and obstacles. -->
       <visual name="terrain_visual">
+        <pose>0 0 0.375 0 0 0</pose>
         <geometry>
-          <heightmap>
-            <uri>heightmap.png</uri>
-            <size>150 150 10</size>
-            <!-- pos z = -5 → pixel 0.5 = z 0 m. Terrain spans -3.4 m to +4.0 m -->
-            <pos>0 0 -5</pos>
-            <!-- Diffuse texture tiles every 6 m — gives surface grain detail -->
-            <texture>
-              <diffuse>terrain_tex.png</diffuse>
-              <normal>terrain_normal.png</normal>
-              <size>6</size>
-            </texture>
-          </heightmap>
+          <plane>
+            <normal>0 0 1</normal>
+            <size>200 200</size>
+          </plane>
         </geometry>
-        <cast_shadows>true</cast_shadows>
+        <material>
+          <ambient>0.30 0.30 0.32 1</ambient>
+          <diffuse>0.42 0.42 0.45 1</diffuse>
+          <specular>0.06 0.06 0.06 1</specular>
+        </material>
+        <cast_shadows>false</cast_shadows>
       </visual>
 
-      <!-- COLLISION — same heightmap (ignored by DART but kept for compatibility) -->
+      <!-- COLLISION — DART ignores <heightmap> collision, and DART+ODE trimesh
+           collision segfaults on a full terrain mesh. So the drivable ground is
+           a large flat box whose top sits at z = 0.375 m — the height of the
+           visual terrain along the flat spawn/goal corridor (see the rover_pad
+           comment). Terrain relief away from the corridor is visual-only; the
+           gpu_lidar still sees it, and the rock models keep their own collision.
+           A contour-accurate collision would need a different physics engine
+           (bullet) — see scripts/heightmap_to_collision_obj.py. -->
       <collision name="terrain_collision">
+        <pose>0 0 0.125 0 0 0</pose>
         <geometry>
-          <heightmap>
-            <uri>heightmap.png</uri>
-            <size>150 150 10</size>
-            <pos>0 0 -5</pos>
-          </heightmap>
+          <box>
+            <size>300 300 0.5</size>
+          </box>
         </geometry>
         <surface>
           <friction>
             <ode>
-              <mu>0.80</mu>
-              <mu2>0.80</mu2>
-              <slip1>0.002</slip1>
-              <slip2>0.002</slip2>
+              <mu>0.9</mu>
+              <mu2>0.9</mu2>
             </ode>
           </friction>
           <contact>
@@ -277,7 +283,7 @@
 
   <!-- Rover: inlined from generated SDF so JointStatePublisher finds joints at world init -->
   <model name='lunar_rover'>
-    <pose>-2 0 0.38 0 0 0</pose>
+    <pose>-2 0 0.42 0 0 0</pose>
     <link name='base_footprint'>
       <inertial>
         <pose>0.016666666666666659 0.0016666666666666659 0.37855555555555559 0 0 0</pose>
@@ -474,6 +480,67 @@
           <ambient>0.125 0.25 0.6875 1</ambient>
         </material>
       </visual>
+
+      <!-- 2D LiDAR — feeds /scan for sensor_pkg + mapping_pkg (Phase 4/5).
+           gpu_lidar is the only ray sensor in Gazebo Harmonic; renders
+           offscreen via gz-sim-sensors-system. gz_frame_id must be a TF
+           frame published by robot_state_publisher (lidar_link). -->
+      <sensor name='lidar' type='gpu_lidar'>
+        <pose>0.2 0 0.555 0 0 0</pose>
+        <topic>scan</topic>
+        <gz_frame_id>lidar_link</gz_frame_id>
+        <update_rate>10</update_rate>
+        <always_on>1</always_on>
+        <visualize>true</visualize>
+        <lidar>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159</min_angle>
+              <max_angle>3.14159</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>1</samples>
+              <resolution>1</resolution>
+              <min_angle>0</min_angle>
+              <max_angle>0</max_angle>
+            </vertical>
+          </scan>
+          <range>
+            <min>0.12</min>
+            <max>12.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.01</stddev>
+          </noise>
+        </lidar>
+      </sensor>
+
+      <!-- IMU — feeds /imu/data for sensor_pkg imu_processor (Phase 4).
+           Handled by gz-sim-imu-system (added to the world plugin list). -->
+      <sensor name='imu' type='imu'>
+        <pose>0 0 0.4 0 0 0</pose>
+        <topic>imu/data</topic>
+        <gz_frame_id>imu_link</gz_frame_id>
+        <update_rate>50</update_rate>
+        <always_on>1</always_on>
+        <imu>
+          <angular_velocity>
+            <x><noise type='gaussian'><mean>0</mean><stddev>0.002</stddev></noise></x>
+            <y><noise type='gaussian'><mean>0</mean><stddev>0.002</stddev></noise></y>
+            <z><noise type='gaussian'><mean>0</mean><stddev>0.002</stddev></noise></z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x><noise type='gaussian'><mean>0</mean><stddev>0.017</stddev></noise></x>
+            <y><noise type='gaussian'><mean>0</mean><stddev>0.017</stddev></noise></y>
+            <z><noise type='gaussian'><mean>0</mean><stddev>0.017</stddev></noise></z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
     </link>
     <joint name='front_left_joint' type='revolute'>
       <pose relative_to='base_footprint'>0.38 0.41999999999999998 0.17999999999999999 0 0 0</pose>
@@ -1010,8 +1077,12 @@
       </visual>
     </link>
     <plugin name='gz::sim::systems::DiffDrive' filename='gz-sim-diff-drive-system'>
+      <left_joint>front_left_joint</left_joint>
       <left_joint>mid_left_joint</left_joint>
+      <left_joint>rear_left_joint</left_joint>
+      <right_joint>front_right_joint</right_joint>
       <right_joint>mid_right_joint</right_joint>
+      <right_joint>rear_right_joint</right_joint>
       <wheel_separation>0.84</wheel_separation>
       <wheel_radius>0.18</wheel_radius>
       <max_linear_velocity>0.5</max_linear_velocity>
