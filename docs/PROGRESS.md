@@ -222,15 +222,16 @@ shebangs, and commented cruft in `rover_simulation/CMakeLists.txt` /
 
 ## 3. Known issues
 
-1. **Terrain classifier over-triggers craters.** A representative run gave
-   `/terrain_map` counts `flat 9 325 / rocky 0 / crater_interior 161 440 /
-   obstacle 5 792` — ~87 % of known cells labelled crater, "rocky" never fires.
-   The pipeline is correct; the parameters in
-   `src/mapping_pkg/config/mapping_params.yaml` are wrong for this terrain.
-   Suggested direction: `hough_param2` 20 → ~35–40, `crater_max_radius_px` 80 →
-   ~25, `hough_min_dist` 15 → ~40, require rim support before flooding an
-   interior; `roughness_threshold` 0.02 → lower, and check the variance window.
-   Needs edit → relaunch `mapping.launch.py` → re-check `cell_counts` iterations.
+1. **Terrain classifier: crater over-triggering fixed; "rocky" never fires (accepted).**
+   The original run labelled ~87 % of known cells crater (`flat 9 325 / rocky 0 /
+   crater_interior 161 440 / obstacle 5 792`). The Hough parameters in
+   `src/mapping_pkg/config/mapping_params.yaml` were then tightened (`hough_param2` 20 -> 50,
+   crater radius 8-80 -> 25-55 px, `hough_min_dist` 15 -> 80, `roughness_threshold` 0.02 ->
+   0.005); the 2026-09-14 snapshot (`results/terrain_maps/latest_meta.json`) reads `flat 212 159 /
+   rocky 0 / crater 0 / obstacle 118 / unknown 147 723`. Two caveats: the world has **no real
+   craters**, so crater detection is now effectively switched off, not validated on real ones;
+   and `rocky` still never fires because on flat ground the LiDAR only returns off the rock
+   models. Both need contour terrain (issue 2) to revisit - loosen the Hough parameters then.
 2. **Flat terrain.** The heightmap relief is gone (DART limitation, above). The
    2-D LiDAR scans horizontally at rover height, so on flat ground it only
    returns off the rock models — `/map` is free space + rock obstacles, not the
@@ -286,10 +287,9 @@ See README §7 for the full list. The ones that mattered here:
    pipeline + `ros2 launch evaluation_pkg evaluation.launch.py planner:=<astar|qaoa>`;
    confirm `/battery/status` falls while driving, `/metrics` updates, and
    `latest_execution.json` appears on arrival. Then flip the Phase 10 row to "verified".
-2. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
-   running sim. Deliverable: `mapping_params.yaml` values that give a sane
-   flat/rocky/crater/obstacle split, plus a note in this file. This is also what would make
-   the Phase 10 savings numbers meaningful (a graph that is not almost all flat).
+2. **Restore contour terrain** (issue 2, Bullet physics), then re-tune the classifier
+   (issue 1). This is what would make the Phase 10 savings numbers meaningful: the energy
+   graph is almost all flat because the world is.
 3. **Phase 11 - real robot** (Arjuna kit / Jetson): replace the battery model constants
    with measured values.
 4. Re-run the Phase 9 pipeline once after the executor refactor (known issue 5).

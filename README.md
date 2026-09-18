@@ -416,7 +416,7 @@ calling Phase 10 fully verified. See `docs/PROGRESS.md` and
 | `occupancy_grid_node` TF errors | `robot_state_publisher` down, or `lidar_link` missing from the Xacro |
 | `/battery/status` never appears | `battery_monitor` timers follow the sim clock — check `/clock` is bridged, or launch with `use_sim_time:=false` |
 | `evaluator` exits: "Comparison file … not found" | run `python3 -m evaluation_pkg.metrics` first (needs the Phase 7/8 result JSONs) |
-| `/terrain_map` is ~all "crater" | known issue — Hough params in `mapping_params.yaml` need tuning (see `docs/PROGRESS.md`) |
+| `/terrain_map` is ~all "crater" | Hough params in `mapping_params.yaml` too loose for the rock field - use the tightened values already in the file (see `docs/PROGRESS.md`, issue 1) |
 
 ---
 
