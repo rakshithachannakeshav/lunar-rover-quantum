@@ -305,6 +305,90 @@
   </link>
 
   <!-- ═══════════════════════════════════════════════════════════════════════
+       IMU MOUNT — small module on the chassis, just above centre
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <joint name="imu_joint" type="fixed">
+    <parent link="base_link"/>
+    <child link="imu_link"/>
+    <origin xyz="0 0 0.07" rpy="0 0 0"/>
+  </joint>
+
+  <link name="imu_link">
+    <visual>
+      <origin xyz="0 0 0" rpy="0 0 0"/>
+      <geometry>
+        <box size="0.04 0.04 0.02"/>
+      </geometry>
+      <material name="dark_grey"/>
+    </visual>
+    <xacro:box_inertia m="0.05" x="0.04" y="0.04" z="0.02"/>
+  </link>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
+       SENSORS — LiDAR + IMU.
+       NOTE: at runtime the simulation loads the rover *inlined* in
+       lunar_terrain.world, which carries its own copies of these sensor
+       blocks. These <gazebo> blocks exist only so a future
+       `xacro rover.urdf.xacro | gz sdf -p -` regeneration stays in sync.
+  ═══════════════════════════════════════════════════════════════════════════ -->
+  <gazebo reference="lidar_link">
+    <sensor name="lidar" type="gpu_lidar">
+      <topic>scan</topic>
+      <gz_frame_id>lidar_link</gz_frame_id>
+      <update_rate>10</update_rate>
+      <always_on>1</always_on>
+      <visualize>true</visualize>
+      <lidar>
+        <scan>
+          <horizontal>
+            <samples>360</samples>
+            <resolution>1</resolution>
+            <min_angle>-3.14159</min_angle>
+            <max_angle>3.14159</max_angle>
+          </horizontal>
+          <vertical>
+            <samples>1</samples>
+            <resolution>1</resolution>
+            <min_angle>0</min_angle>
+            <max_angle>0</max_angle>
+          </vertical>
+        </scan>
+        <range>
+          <min>0.12</min>
+          <max>12.0</max>
+          <resolution>0.01</resolution>
+        </range>
+        <noise>
+          <type>gaussian</type>
+          <mean>0.0</mean>
+          <stddev>0.01</stddev>
+        </noise>
+      </lidar>
+    </sensor>
+  </gazebo>
+
+  <gazebo reference="imu_link">
+    <sensor name="imu" type="imu">
+      <topic>imu/data</topic>
+      <gz_frame_id>imu_link</gz_frame_id>
+      <update_rate>50</update_rate>
+      <always_on>1</always_on>
+      <imu>
+        <angular_velocity>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.002</stddev></noise></z>
+        </angular_velocity>
+        <linear_acceleration>
+          <x><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></x>
+          <y><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></y>
+          <z><noise type="gaussian"><mean>0</mean><stddev>0.017</stddev></noise></z>
+        </linear_acceleration>
+      </imu>
+    </sensor>
+  </gazebo>
+
+  <!-- ═══════════════════════════════════════════════════════════════════════
        WHEEL MACRO — Modular, used for all 4 wheels
        Params: name (e.g. front_left), x=fore/aft offset, y=lateral offset
   ═══════════════════════════════════════════════════════════════════════════ -->
@@ -425,18 +509,12 @@
       <max_linear_acceleration>1.5</max_linear_acceleration>
       <max_angular_acceleration>2.0</max_angular_acceleration>
       <topic>cmd_vel</topic>
+      <odom_topic>odometry</odom_topic>
+      <tf_topic>tf</tf_topic>
       <frame_id>odom</frame_id>
       <child_frame_id>base_footprint</child_frame_id>
       <odom_publish_frequency>30</odom_publish_frequency>
     </plugin>
-  </gazebo>
-
-
-  <!-- Joint state publisher: no <joint_name> filter = publishes all joints,
-       avoids entity-resolution failure when spawned from URDF via ros_gz_sim create -->
-  <gazebo>
-    <plugin filename="gz-sim-joint-state-publisher-system"
-            name="gz::sim::systems::JointStatePublisher"/>
   </gazebo>
 
 </robot>
