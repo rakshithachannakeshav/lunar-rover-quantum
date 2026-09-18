@@ -33,7 +33,10 @@ LAYER 3 — EXECUTION             (src/navigation_pkg)
   /path/*              -> path_executor          -> /cmd_vel          (Phase 9)
 
 LAYER 4 — EVALUATION            (src/evaluation_pkg)
-  /path/* + /odom      -> evaluator              -> /metrics          (Phase 10)
+  /cmd_vel + /odom     -> battery_monitor        -> /battery/status   (Phase 10)
+  /odom + /battery/status + comparison.json -> evaluator -> /metrics  (Phase 10)
+  latest_classical/quantum.json + graph -> evaluation_pkg.metrics (CLI) -> comparison.json
+  comparison.json      -> scripts/plot_energy_comparison.py -> PNG + CSV
 ```
 
 ### Full node / topic map
@@ -49,8 +52,8 @@ LAYER 4 — EVALUATION            (src/evaluation_pkg)
 | `classical_planner` | planning_pkg | `/path/classical`, `/path/classical/dijkstra` | `results/graphs/latest.graphml` | done |
 | `quantum_optimizer` | planning_pkg / quantum | `/path/quantum` | `/odom`, `results/graphs/latest.graphml` | done |
 | `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical`, `/odom` | done |
-| `battery_monitor` | evaluation_pkg | `/battery/status` | `/cmd_vel`, `/odom` | **not built** |
-| `evaluator` | evaluation_pkg | `/metrics` | `/path/*`, `/battery/status` | **not built** |
+| `battery_monitor` | evaluation_pkg | `/battery/status` (`sensor_msgs/BatteryState`) | `/cmd_vel`, `/odom` | written, not yet run in sim |
+| `evaluator` | evaluation_pkg | `/metrics` (JSON in `std_msgs/String`), `results/energy_comparison/execution_*.json` | `/odom`, `/battery/status`, `results/energy_comparison/latest_comparison.json` | written, not yet run in sim |
 
 ---
 
@@ -219,7 +222,22 @@ ros2 launch planning_pkg quantum_navigation.launch.py goal_x:=8.0 goal_y:=0.0
 # Mode B: Configurable Navigation Pipeline (Quantum or Classical)
 ros2 launch navigation_pkg navigation_pipeline.launch.py planner_mode:=quantum goal_x:=8.0 goal_y:=0.0
 
-# 10. Visualise & Verify Results
+# 10. Evaluation (Phase 10)
+# 10a. Offline comparison: Dijkstra vs A* vs QAOA vs a distance-only baseline.
+#      Needs results/paths/latest_classical.json, latest_quantum.json and the graph
+#      (from steps 6-8). --sweep N also compares over N random routes on the graph.
+PYTHONPATH=src/evaluation_pkg python3 -m evaluation_pkg.metrics --sweep 200
+#   -> writes results/energy_comparison/latest_comparison.json
+python3 scripts/plot_energy_comparison.py            # add --theme dark for dark plots
+#   -> energy_comparison.png, route_sweep.png, path_overlay.png, comparison_table.csv
+# 10b. Live: simulated battery + planned-vs-actual, alongside the Phase 9 pipeline
+#      (start Gazebo + the navigation pipeline first; match planner to the one driving)
+ros2 launch evaluation_pkg evaluation.launch.py planner:=qaoa      # or astar / dijkstra
+ros2 topic echo /battery/status --once
+ros2 topic echo /metrics --once
+#   on arrival -> results/energy_comparison/latest_execution.json
+
+# 11. Visualise & Verify Results
 # Visualisation Option A: 2D Plot Overlay (A* vs Quantum metrics)
 python3 scripts/visualize_plan.py
 #   -> writes results/paths/latest_classical_plot.png
@@ -283,6 +301,22 @@ E(edge) = d · S(θ) · T(type) · R(r)
   R(r)   = 1.0 + r                      roughness factor, r ∈ [0,1] from LiDAR variance
 ```
 
+### Evaluation outputs (Phase 10 contract)
+
+- `results/energy_comparison/latest_comparison.json` (+ timestamped copy): `planners`
+  (`dijkstra`, `astar`, `qaoa`, `distance_only` — each `energy`, `distance_m`,
+  `waypoints`, `runtime_ms`, `path_efficiency`, `energy_per_m`, `path_nodes`,
+  `path_coords`, `extras`), `summary` (`best_energy_planner`, `qaoa_matches_classical`,
+  `qaoa_energy_ratio`, `qaoa_fallback`, `qaoa_runtime_ratio_vs_astar`,
+  `energy_savings_vs_distance_only_pct`) and, with `--sweep`, `sweep` (per-route
+  `savings_pct` + summary).
+- `/battery/status` — `sensor_msgs/BatteryState`; `percentage` is 0–1, `current` is
+  negative while discharging, `capacity`/`design_capacity` in Ah.
+- `/metrics` — `std_msgs/String` holding JSON: planned vs actual distance,
+  `execution_efficiency`, `consumed_j`, `joules_per_m`, `goal_reached`.
+- `results/energy_comparison/latest_execution.json` — the same report frozen at arrival.
+- No custom ROS messages: the two topics above use standard types by design.
+
 ### Classical path planning outputs (Phase 7 contract)
 
 - `/path/classical` (`nav_msgs/msg/Path`, `TransientLocal` QoS): Canonical optimal energy path computed via A* for Layer 3 execution (`path_executor` in Phase 9).
@@ -334,7 +368,7 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 | 7 | Classical planning — **done** | `/path/classical` + energy total | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra and A* over weighted graph; publishes `nav_msgs/Path`; writes `results/paths/latest_classical.json` |
 | 8 | Quantum optimization — **done** | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
 | 9 | Integration — **done** | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a proportional controller; `navigation_pipeline.launch.py` runs end to end |
-| 10 | Evaluation | plots: energy classical vs quantum, path efficiency, runtime | `battery_monitor` (integrate power ∝ `|v|` + turn cost), `evaluator` node, matplotlib comparison scripts under `scripts/` |
+| 10 | Evaluation — **core done; ROS nodes not yet run** | `results/energy_comparison/latest_comparison.json`, plots, `/battery/status`, `/metrics` | `evaluation_pkg.metrics` + `energy_model` (pure Python, unit-tested), `battery_monitor_node`, `evaluator_node`, `scripts/plot_energy_comparison.py`; see the Phase 10 note below |
 | 11 | Real robot | rover driving lunar-like terrain on the Arjuna kit | ROS 2 on Jetson Nano; Arduino motor bridge; replace Gazebo topics with hardware drivers |
 | 12 | Docs & report | final report, slides, paper draft | — |
 
@@ -354,6 +388,20 @@ Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` f
 
 **Phase 9 is done:** `navigation_pkg.path_executor_node` (`path_executor`) subscribes to `/path/quantum` or `/path/classical` and `/odom`, translating waypoints into velocity commands on `/cmd_vel`. `navigation_pipeline.launch.py` connects the full pipeline end-to-end.
 
+**Phase 10 (evaluation) — what it does and does not show.** `evaluation_pkg.metrics`
+compares Dijkstra, A*, the simulated QAOA path and a **distance-only baseline** (shortest
+path by Euclidean length, re-priced with the real energy weights). On real project data
+QAOA returns the **same** energy as A*/Dijkstra (ratio 1.00, no classical fallback) but is
+~2×10⁴× slower (5.5 s vs 0.25 ms) — it matches the classical optimum, it does not beat it. The only energy
+saving is against the distance-only baseline: 0 % on the single evaluated route, mean
+0.24 % / max 8.5 % over a 200-route sweep of the current (near-flat) terrain graph. The
+battery model (`P = P_idle + k_lin·|v| + k_ang·|ω|`, 40 Wh, 24 V) is an **assumption**, not
+a measurement — replace the constants when the real rover exists (Phase 11). The pure-Python
+core and plots are verified (84 tests pass); `battery_monitor` / `evaluator` have only been
+smoke-tested against stubbed `rclpy`, so run the live steps in §5 on the Ubuntu box before
+calling Phase 10 fully verified. See `docs/PROGRESS.md` and
+`docs/superpowers/specs/2026-09-18-phase10-evaluation-design.md`.
+
 ## 9. Troubleshooting
 
 | Symptom | Cause / fix |
@@ -366,6 +414,8 @@ Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` f
 | `/map` stays all `-1` while driving | `/scan` not reaching the node (BEST_EFFORT QoS) — echo `/scan` in the same shell; check `/clock` is bridged and `use_sim_time` is true |
 | Rover spins but doesn't move | terrain collision — see §7 (DART + heightmap) |
 | `occupancy_grid_node` TF errors | `robot_state_publisher` down, or `lidar_link` missing from the Xacro |
+| `/battery/status` never appears | `battery_monitor` timers follow the sim clock — check `/clock` is bridged, or launch with `use_sim_time:=false` |
+| `evaluator` exits: "Comparison file … not found" | run `python3 -m evaluation_pkg.metrics` first (needs the Phase 7/8 result JSONs) |
 | `/terrain_map` is ~all "crater" | known issue — Hough params in `mapping_params.yaml` need tuning (see `docs/PROGRESS.md`) |
 
 ---
