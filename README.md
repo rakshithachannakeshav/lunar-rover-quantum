@@ -104,20 +104,37 @@ lunar-rover-quantum/
 
 ---
 
-## 4. Setup from a fresh clone
+## 4. Step 0 — one-time setup
 
 ROS 2 Jazzy + Gazebo Harmonic need **Ubuntu 24.04**. It does not run natively on
-Windows — use a VM, WSL2, or dual-boot. Confirm the guest OS with
-`cat /etc/os-release`; 22.04 ("Jammy") **cannot** install Jazzy.
+Windows — use WSL2, a VM, or dual-boot. Confirm with `cat /etc/os-release`
+(22.04 "Jammy" **cannot** install Jazzy).
+
+Rules that avoid the most common failures:
+
+- Work inside the Linux home folder (`~/lunar-rover-quantum`), **not** under
+  `/mnt/d/...` (slow, CRLF problems) and **not** in a path containing a space.
+- Run every `ros2` command **from the repo root** — nodes read and write `results/...`
+  relative to the current directory.
+- Never test from an older copy of the repo. If `git log` does not show a recent
+  commit, or `ros2 pkg prefix <pkg>` points somewhere else, you are on a stale copy
+  (see §9).
+
+### 0.1 Clone
 
 ```bash
+sudo apt update && sudo apt install -y git build-essential cmake
 git clone https://github.com/rakshithachannakeshav/lunar-rover-quantum.git ~/lunar-rover-quantum
 cd ~/lunar-rover-quantum
+git switch develop
+git log --oneline -1          # should be a recent "Merge pull request ..." line
 ```
 
-### 4a. Dependencies
+`build-essential` provides the C compiler the two CMake packages
+(`rover_simulation`, `sensor_pkg`) need; without it the build fails with
+`CMAKE_C_COMPILER not set`.
 
-Run once, in order (each does real `apt-get` work):
+### 0.2 ROS 2, Gazebo and simulation tools (once)
 
 ```bash
 chmod +x scripts/*.sh
@@ -125,22 +142,32 @@ bash scripts/setup_ros2_repo.sh          # ROS 2 apt repo + locale
 bash scripts/install_ros2_jazzy.sh       # ROS 2 Jazzy desktop + colcon + rosdep
 bash scripts/install_gazebo_harmonic.sh  # Gazebo Harmonic + ros_gz
 bash scripts/install_sim_dependencies.sh # xacro, rviz2, nav2, teleop, tf tools
-bash scripts/install_python_quantum.sh   # Python + Qiskit stack (creates a venv)
-
-# extras the mapping + sensor phase need explicitly:
-sudo apt install -y ros-jazzy-tf2-ros ros-jazzy-visualization-msgs \
-  ros-jazzy-tf2-tools python3-opencv
+sudo apt install -y ros-jazzy-tf2-ros ros-jazzy-visualization-msgs ros-jazzy-tf2-tools
 ```
 
 Notes:
-- `install_ros2_jazzy.sh` / `install_python_quantum.sh` hard-code
-  `/home/monis/.bashrc` for the auto-source line. If your username differs, that
-  line silently no-ops — just `source /opt/ros/jazzy/setup.bash` in each new
-  terminal.
-- On WSL2, Gazebo's `gpu_lidar` needs a GL context. If the sim errors on the
-  render engine, `export LIBGL_ALWAYS_SOFTWARE=1` before launching.
+- `install_ros2_jazzy.sh` / `install_python_quantum.sh` hard-code `/home/monis/.bashrc`
+  for the auto-source line. If your username differs that line silently no-ops — just
+  source ROS in each terminal (step 0.5).
+- Do not add `source .../install/setup.bash` to `~/.bashrc` for a specific copy of the
+  repo; it makes every new terminal use that copy.
 
-### 4b. Build
+### 0.3 Python packages (for the system `python3` that ROS nodes use)
+
+ROS nodes run under `/usr/bin/python3`, so install the packages there (the virtualenv
+created by `install_python_quantum.sh` is not visible to `ros2 launch`).
+
+```bash
+sudo apt install -y python3-pip python3-pytest python3-numpy python3-scipy \
+  python3-networkx python3-matplotlib python3-pil python3-yaml python3-opencv
+python3 -m pip install --user --break-system-packages qiskit qiskit-aer
+python3 -c "import qiskit, qiskit_aer, networkx, scipy, numpy, cv2, PIL, matplotlib; print('python deps ok')"
+```
+
+(Ubuntu 24.04 blocks plain `pip install` — PEP 668 — hence `--break-system-packages`
+with `--user`.)
+
+### 0.4 Build
 
 ```bash
 source /opt/ros/jazzy/setup.bash
@@ -148,105 +175,199 @@ colcon build --symlink-install
 source install/setup.bash
 ```
 
-All six packages should report **Finished**, none **Failed**.
-`planning_pkg`, `navigation_pkg`, `evaluation_pkg` are still scaffolding and build
-instantly.
+All **6 packages must report `Finished`**, none `Failed`/`Aborted`.
+
+### 0.5 Every new terminal starts with this
+
+```bash
+cd ~/lunar-rover-quantum
+source /opt/ros/jazzy/setup.bash
+source install/setup.bash
+export LIBGL_ALWAYS_SOFTWARE=1     # WSL2 / no GPU; needed in the terminal that starts Gazebo
+```
+
+### 0.6 Sanity check (no ROS needed)
+
+```bash
+python3 -m pytest -q               # all pass; 5 ROS/Gazebo tests are deselected
+ros2 pkg prefix mapping_pkg        # must print /home/<you>/lunar-rover-quantum/install/mapping_pkg
+```
 
 ---
 
-## 5. Running it
+## 5. Running it — step by step
 
-Each step is its own terminal; source `/opt/ros/jazzy/setup.bash` **and**
-`install/setup.bash` in each.
+The flow is: **map the terrain → build the energy graph → plan offline → drive live →
+evaluate.** Steps 1–4 build the inputs; steps 5–7 are the live checks; step 8 collects
+results.
+
+Terminals used (each starts with the 0.5 block; **run everything from the repo root**):
+
+| Terminal | Role |
+|---|---|
+| **T1** | Gazebo simulation |
+| **T2** | first ROS launch (sensors, then the navigation pipeline) |
+| **T3** | second ROS launch (mapping, then evaluation) |
+| **T4** | checks, `ros2 topic` commands and the offline Python commands |
+
+**Restart the simulation (Ctrl+C in T1, launch again) before every live run.** `/odom`
+restarts at (0, 0) on the spawn point, which is where the planners start, and the rover
+must be back there.
+
+### Step 1 — Start the simulation (T1)
 
 ```bash
-# 1. Simulation (headless Gazebo server + ROS<->GZ bridge + robot_state_publisher)
-export LIBGL_ALWAYS_SOFTWARE=1            # WSL2 / no-GPU only
 ros2 launch rover_simulation simulation_launch.py
+```
 
-# 2. Sanity check
-ros2 topic list          # expect /clock /cmd_vel /odom /joint_states /tf /scan /imu/data
-ros2 topic hz /scan      # ~10 Hz
-ros2 topic hz /imu/data  # ~50 Hz
+Check in T4:
 
-# 3. Drive the rover
-ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.3}, angular: {z: 0.3}}"
-# or:  ros2 run rover_simulation rover_keyboard.py     (needs: sudo apt install python3-pynput)
+```bash
+ros2 topic list        # expect /clock /cmd_vel /odom /joint_states /tf /scan /imu/data
+ros2 topic hz /scan    # ~10 Hz
+```
 
-# 4. Sensor processing nodes
-ros2 launch sensor_pkg sensors_launch.py
+### Step 2 — Map the terrain (T1, T2, T3, T4)
 
-# 5. Mapping pipeline (Phase 5)
-ros2 launch mapping_pkg mapping.launch.py
-#   -> /map (600x600 @ 0.05 m), /terrain_map, /terrain_map_markers
-#   -> writes results/terrain_maps/latest.npz every ~10 s
+The graph is built from what the LiDAR has seen, so the rover has to drive first.
 
-# 6. Energy-weighted graph generation (Phase 6)
-python3 -m planning_pkg.graph_model \
+1. **T2** — sensor processing: `ros2 launch sensor_pkg sensors_launch.py`
+2. **T3** — mapping: `ros2 launch mapping_pkg mapping.launch.py`
+   (publishes `/map`, `/terrain_map`; writes `results/terrain_maps/latest.npz` every ~10 s)
+3. **Drive the rover for 60–90 s** — pick one:
+   - *Autonomous:* stop T1 and instead run
+     `ros2 launch rover_simulation demo.launch.py mode:=patrol` in T1. It starts the
+     same simulation and, after 12 s, drives the rover along the trail toward x = 8 m.
+   - *Manual (T4):*
+     `ros2 topic pub -r 20 /cmd_vel geometry_msgs/msg/Twist "{linear: {x: 0.3}, angular: {z: 0.3}}"`
+     (drives a circle; Ctrl+C to stop), or
+     `ros2 run rover_simulation rover_keyboard.py` (needs `sudo apt install python3-pynput`
+     and a display).
+4. **Check (T4):** `cat results/terrain_maps/latest_meta.json` — `cell_counts.flat_count`
+   must be **> 0**.
+5. Stop everything: Ctrl+C in T1, T2, T3.
+
+### Step 3 — Build the energy graph (T4, no ROS)
+
+```bash
+PYTHONPATH=src/planning_pkg python3 -m planning_pkg.graph_model \
   --npz results/terrain_maps/latest.npz \
   --heightmap src/rover_simulation/worlds/heightmap.png \
   --out results/graphs --cell-stride 5
-#   -> writes results/graphs/latest.graphml + latest_meta.json
+cat results/graphs/latest_meta.json     # node_count and edge_count must be > 0
+```
 
-# 7. Classical path planning (Phase 7)
-# Note: Ensure you are in the workspace root directory. Requires results/graphs/latest.graphml.
+`node_count: 0` means the map was empty: go back to step 2 and drive longer.
 
-# Mode A: ROS 2 node mode (requires build & sourced overlay)
-source /opt/ros/jazzy/setup.bash
-colcon build --symlink-install
-source install/setup.bash
-ros2 launch planning_pkg classical_planner.launch.py goal_x:=1.5 goal_y:=1.5
-#   -> publishes /path/classical (canonical A*) & /path/classical/dijkstra (debug)
-#   -> writes results/paths/latest_classical.json + timestamped copy
+### Step 4 — Plan offline and compare (T4, no ROS)
 
-# Mode B: Standalone CLI mode (zero ROS build/underlay needed)
-# Linux / WSL:
-PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
-# Windows PowerShell:
-# $env:PYTHONPATH="src/planning_pkg"; python -m planning_pkg.classical_planning --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
+Same start (0, 0) and goal (1.5, 1.5) for every command; the live steps reuse them.
 
-# 8. Quantum Path Optimization (Phase 8)
-# Mode A: ROS 2 node mode (requires graphml)
-ros2 launch planning_pkg quantum_optimizer.launch.py goal_x:=8.0 goal_y:=0.0
+```bash
+# Dijkstra + A*   -> results/paths/latest_classical.json
+PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning \
+  --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
 
-# Mode B: Standalone Python CLI
+# QAOA (simulated) -> results/paths/latest_quantum.json   (takes a few seconds)
 PYTHONPATH=src/planning_pkg python3 -m planning_pkg.quantum_optimizer \
-  --start-x 0.0 --start-y 0.0 --goal-x 8.0 --goal-y 0.0 \
+  --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5 \
   --graph results/graphs/latest.graphml --max-edges 10 --shots 2048
 
-# 9. Full Navigation Pipeline & Path Executor (Phase 9)
-# Mode A: End-to-End Quantum Pipeline
-ros2 launch planning_pkg quantum_navigation.launch.py goal_x:=8.0 goal_y:=0.0
-
-# Mode B: Configurable Navigation Pipeline (Quantum or Classical)
-ros2 launch navigation_pkg navigation_pipeline.launch.py planner_mode:=quantum goal_x:=8.0 goal_y:=0.0
-
-# 10. Evaluation (Phase 10)
-# 10a. Offline comparison: Dijkstra vs A* vs QAOA vs a distance-only baseline.
-#      Needs results/paths/latest_classical.json, latest_quantum.json and the graph
-#      (from steps 6-8). --sweep N also compares over N random routes on the graph.
+# Compare planners + distance-only baseline over 200 random routes
+#   -> results/energy_comparison/latest_comparison.json
 PYTHONPATH=src/evaluation_pkg python3 -m evaluation_pkg.metrics --sweep 200
-#   -> writes results/energy_comparison/latest_comparison.json
-python3 scripts/plot_energy_comparison.py            # add --theme dark for dark plots
-#   -> energy_comparison.png, route_sweep.png, path_overlay.png, comparison_table.csv
-# 10b. Live: simulated battery + planned-vs-actual, alongside the Phase 9 pipeline
-#      (start Gazebo + the navigation pipeline first; match planner to the one driving)
-ros2 launch evaluation_pkg evaluation.launch.py planner:=qaoa      # or astar / dijkstra
-ros2 topic echo /battery/status --once
-ros2 topic echo /metrics --once
-#   on arrival -> results/energy_comparison/latest_execution.json
 
-# 11. Visualise & Verify Results
-# Visualisation Option A: 2D Plot Overlay (A* vs Quantum metrics)
-python3 scripts/visualize_plan.py
-#   -> writes results/paths/latest_classical_plot.png
+# Plots + table (add --theme dark for dark plots)
+python3 scripts/plot_energy_comparison.py
+python3 scripts/visualize_plan.py        # 2-D route overlay -> results/paths/latest_classical_plot.png
+```
 
-# Visualisation Option B: 3D RViz2 Simulation (live ROS 2 topics)
+Expect: QAOA energy equals A*/Dijkstra energy with `fallback=False`, and three PNGs
+(`energy_comparison`, `route_sweep`, `path_overlay`) plus `comparison_table.csv` in
+`results/energy_comparison/`. QAOA matches the classical optimum; it does not beat it.
+
+### Step 5 — Live drive, classical planner (Phase 9)
+
+1. **T1** — fresh simulation: `ros2 launch rover_simulation simulation_launch.py`
+2. **T2** — planner + executor:
+   ```bash
+   ros2 launch navigation_pkg navigation_pipeline.launch.py \
+     planner_mode:=classical goal_x:=1.5 goal_y:=1.5
+   ```
+3. **Pass:** T2 logs `Received new path on /path/classical with N waypoints`, then
+   `Waypoint i/N reached ...`, then `Final waypoint reached. Rover stopped.`
+   In T4: `ros2 topic echo /odom --once` shows a position within 0.5 m of the goal
+   (the planner snaps the goal to the nearest graph node), and
+   `ros2 topic echo /cmd_vel --once` is all zeros.
+4. *Optional QoS check (late-joining executor):* in T2 run only the planner
+   `ros2 launch planning_pkg classical_planner.launch.py goal_x:=1.5 goal_y:=1.5`, wait
+   10 s, then in T3
+   `ros2 run navigation_pkg path_executor --ros-args -p path_topic:=/path/classical`.
+   The rover must still receive the path and drive.
+5. Ctrl+C T2 (and T3); restart T1.
+
+### Step 6 — Live drive, quantum planner (Phase 8 + 9)
+
+Fresh simulation in T1, then in T2:
+
+```bash
+ros2 launch navigation_pkg navigation_pipeline.launch.py \
+  planner_mode:=quantum goal_x:=1.5 goal_y:=1.5
+```
+
+The quantum node waits for `/odom`, plans (a few seconds on the CPU simulator), publishes
+`/path/quantum`, and the executor drives it. Pass criteria are the same as step 5. Restart
+T1 afterwards.
+
+### Step 7 — Live evaluation (Phase 10)
+
+Needs `results/energy_comparison/latest_comparison.json` from step 4 **for the same goal**.
+
+1. **T1** — fresh simulation.
+2. **T2** — start the evaluation **first**, so the battery baseline starts before the
+   rover moves:
+   ```bash
+   ros2 launch evaluation_pkg evaluation.launch.py planner:=qaoa goal_tolerance:=0.5
+   # planner:=astar or dijkstra to evaluate the classical path instead
+   ```
+3. **T3** — the pipeline (match the planner):
+   ```bash
+   ros2 launch navigation_pkg navigation_pipeline.launch.py \
+     planner_mode:=quantum goal_x:=1.5 goal_y:=1.5
+   ```
+4. **T4** while it drives:
+   ```bash
+   ros2 topic echo /battery/status --once   # percentage ~0.99x and falling, current negative
+   ros2 topic echo /metrics --once          # JSON: planned vs actual distance, consumed_j, goal_reached
+   ```
+5. **Pass:** the evaluator (T2) logs `Goal reached: drove X m (planned P m), used Y J` (P is the distance in `latest_comparison.json`, about 2.1 m for this route on the reference graph),
+   and `results/energy_comparison/latest_execution.json` exists. Expect the actual distance
+   within roughly 20 % of the planned distance and a few hundred joules at most; the battery
+   percentage only drops a little (40 Wh capacity), which is normal.
+6. If `/battery/status` never appears, relaunch the evaluation with `use_sim_time:=false`.
+   `goal_tolerance` must be at least the executor's goal tolerance (0.5 m).
+
+### Step 8 — Look at the results (T4)
+
+```bash
+ls results/energy_comparison/           # comparison + execution JSON, PNGs, comparison_table.csv
+explorer.exe results/energy_comparison  # WSL2: opens the folder in Windows Explorer
+```
+
+Outputs by step: `results/terrain_maps/` (2), `results/graphs/` (3), `results/paths/` (4),
+`results/energy_comparison/` (4, 7). `results/` is gitignored.
+
+### Step 9 — Shut down
+
+Ctrl+C in every terminal. If Gazebo does not exit cleanly, `pkill -f "gz sim"` before the
+next launch (a leftover server blocks the next start).
+
+### Optional — RViz
+
+```bash
 ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true
-#   In RViz: Fixed Frame = map; add displays:
-#         Path /path/quantum (QAOA optimal), Path /path/classical (A* optimal),
-#         Map /map, Map /terrain_map, MarkerArray /terrain_map_markers,
-#         LaserScan /scan, RobotModel (/robot_description)
+# In RViz: Fixed Frame = map; add Path /path/quantum and /path/classical, Map /map and
+# /terrain_map, MarkerArray /terrain_map_markers, LaserScan /scan, RobotModel.
 ```
 
 ### Web viewer (no Linux/ROS needed)
@@ -406,6 +527,10 @@ calling Phase 10 fully verified. See `docs/PROGRESS.md` and
 | Symptom | Cause / fix |
 |---|---|
 | `ros2: command not found` | `source /opt/ros/jazzy/setup.bash` |
+| Build fails: `CMAKE_C_COMPILER not set` (`rover_simulation` / `sensor_pkg`) | no C compiler: `sudo apt install -y build-essential cmake`, rebuild |
+| `file 'X.launch.py' was not found in the share directory` or `No module named planning_pkg.graph_model` | you are on a stale copy of the repo or a stale overlay: `ros2 pkg prefix <pkg>` must point into your current clone; remove any `source .../install/setup.bash` for another copy from `~/.bashrc`; re-clone if `git log` is old |
+| `pip install` says `externally-managed-environment` | Ubuntu 24.04 PEP 668: `python3 -m pip install --user --break-system-packages <pkg>` |
+| `results/graphs/latest_meta.json` has `node_count: 0` | the map was empty: drive longer in step 2, check `cell_counts.flat_count > 0`, rebuild the graph |
 | `ros2 run` says the executable is not found / `bad interpreter` after a Windows checkout | CRLF line endings in the node scripts: `sed -i 's/\r$//' src/sensor_pkg/sensor_pkg/*.py`, then rebuild (`rm -rf build install log && colcon build --symlink-install`) |
 | Package not found after build | `source install/setup.bash` (separate from the ROS 2 source) |
 | Wall of "Depends: … not installable" during Jazzy install | Wrong Ubuntu — need 24.04, not 22.04 |

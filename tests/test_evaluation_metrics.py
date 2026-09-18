@@ -18,7 +18,12 @@ PKG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', '
 if PKG_DIR not in sys.path:
     sys.path.insert(0, PKG_DIR)
 
+NAV_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', 'src', 'navigation_pkg'))
+if NAV_DIR not in sys.path:
+    sys.path.insert(0, NAV_DIR)
+
 from evaluation_pkg.metrics import (  # noqa: E402
+    DEFAULT_GOAL_TOLERANCE_M,
     ExecutionMonitor,
     build_comparison,
     distance_only_baseline,
@@ -245,6 +250,13 @@ def test_execution_monitor_freezes_after_arrival(result_files):
     assert monitor.update_position(5.0, 5.0) is False  # reported once only
     monitor.update_battery(500.0, 0.5)
     assert monitor.report() == frozen
+
+
+def test_evaluator_tolerance_is_not_tighter_than_the_executors():
+    """If the executor stops at 0.5 m but the evaluator needs 0.35 m, arrival is never seen."""
+    from navigation_pkg.path_following import DEFAULT_GOAL_TOLERANCE
+
+    assert DEFAULT_GOAL_TOLERANCE_M >= DEFAULT_GOAL_TOLERANCE
 
 
 def test_execution_monitor_rejects_pathless_planner(result_files):

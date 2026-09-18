@@ -25,8 +25,9 @@ def generate_launch_description():
             'comparison_path', default_value='results/energy_comparison/latest_comparison.json',
             description='Comparison file written by `python -m evaluation_pkg.metrics`.'),
         DeclareLaunchArgument(
-            'goal_tolerance', default_value='0.35',
-            description='Distance to the final waypoint (m) that counts as arrived.'),
+            'goal_tolerance', default_value='0.5',
+            description='Distance to the final waypoint (m) that counts as arrived. Keep it >= '
+                        "the path_executor's goal_tolerance (0.5), or arrival may never register."),
         DeclareLaunchArgument(
             'capacity_wh', default_value='40.0',
             description='Simulated battery capacity in Wh.'),

@@ -373,6 +373,11 @@ def execution_report(planned: PlannerMetrics, battery: Dict[str, Any]) -> Dict[s
     }
 
 
+# Must be >= path_executor's goal_tolerance (navigation_pkg.path_following), or the
+# executor can stop just outside this radius and arrival is never recorded.
+DEFAULT_GOAL_TOLERANCE_M = 0.5
+
+
 class ExecutionMonitor:
     """Tracks one drive of a planned path: distance, energy since start, goal reached.
 
@@ -381,7 +386,7 @@ class ExecutionMonitor:
     driving (e.g. while waiting for a plan) is included.
     """
 
-    def __init__(self, planned: PlannerMetrics, goal_tolerance: float = 0.35):
+    def __init__(self, planned: PlannerMetrics, goal_tolerance: float = DEFAULT_GOAL_TOLERANCE_M):
         if not planned.path_coords:
             raise ValueError(f"Planner '{planned.name}' has no path coordinates to evaluate.")
         self.planned = planned

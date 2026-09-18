@@ -55,7 +55,7 @@ from sensor_msgs.msg import BatteryState
 from std_msgs.msg import String
 
 from evaluation_pkg.energy_model import consumed_joules
-from evaluation_pkg.metrics import ExecutionMonitor, PlannerMetrics
+from evaluation_pkg.metrics import DEFAULT_GOAL_TOLERANCE_M, ExecutionMonitor, PlannerMetrics
 
 
 class EvaluatorNode(Node):
@@ -65,7 +65,7 @@ class EvaluatorNode(Node):
         self.declare_parameter('planner', 'astar')
         self.declare_parameter('comparison_path', 'results/energy_comparison/latest_comparison.json')
         self.declare_parameter('out_dir', 'results/energy_comparison')
-        self.declare_parameter('goal_tolerance', 0.35)
+        self.declare_parameter('goal_tolerance', DEFAULT_GOAL_TOLERANCE_M)
         self.declare_parameter('odom_topic', '/odom')
         self.declare_parameter('battery_topic', '/battery/status')
         self.declare_parameter('metrics_topic', '/metrics')
