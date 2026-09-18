@@ -149,8 +149,6 @@ source install/setup.bash
 ```
 
 All six packages should report **Finished**, none **Failed**.
-`planning_pkg`, `navigation_pkg`, `evaluation_pkg` are still scaffolding and build
-instantly.
 
 ---
 
