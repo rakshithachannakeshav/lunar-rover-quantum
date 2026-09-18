@@ -22,14 +22,14 @@ ROS 2: its pure-Python core and plots are verified, its two ROS nodes are **not 
 | 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 |
 | 7 | Classical planning | **done** | `planning_pkg.classical_planning` + `classical_planner_node` (Dijkstra, A*); ran on the Ubuntu box against a real graph; 14 tests |
 | 8 | Quantum optimization | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
-| 9 | Integration | **done, verified** | `navigation_pkg.path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
+| 9 | Integration | **done; controller unit-tested, live drive not re-run since the executor refactor** | `navigation_pkg.path_following` (control law, 13 tests incl. a closed-loop drive) + `path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
 | 10 | Evaluation | **core done & verified; ROS nodes written, not yet run in sim** | `evaluation_pkg.metrics` / `energy_model` + `scripts/plot_energy_comparison.py` run on the real Phase 7/8 results and graph (33 unit tests); `battery_monitor_node` / `evaluator_node` / `evaluation.launch.py` only smoke-tested against stubbed `rclpy` |
 | 11–12 | Real robot → Docs | **not started** | - |
 
 Pure-Python check (runs anywhere, no ROS):
 
 ```bash
-python3 -m pytest -q            # 84 passed (5 ROS/Gazebo tests deselected)
+python3 -m pytest -q            # 91 passed (5 ROS/Gazebo tests deselected)
 python3 -m compileall -q src scripts tests
 ```
 
@@ -244,13 +244,16 @@ shebangs, and commented cruft in `rover_simulation/CMakeLists.txt` /
    (see section 4); `evaluator` counts energy from its first battery sample, so idle time
    before the rover starts moving is included; `execution_efficiency` (= planned / actual
    distance) is only meaningful after arrival.
-5. **Phase 9 review findings (not fixed).** (a) `path_executor` subscribes to the path with
-   default QoS (volatile, depth 10) while planners publish once with `TransientLocal`; a
-   path published before the executor is up can be missed - subscribe `TRANSIENT_LOCAL`,
-   `RELIABLE`, depth 1 to match. (b) `tests/test_path_executor.py` re-implements the control
-   law inside the test, so it cannot catch a regression - extract the control law into a
-   pure module and test that. (c) `ROADMAP.md` and `Implementation.md` at the repo root
-   break the one-progress-doc / one-guidelines-doc rule; fold them into this file and README.
+5. **Phase 9 review findings - fixed 2026-09-18, not yet re-run in simulation.**
+   (a) `path_executor` now subscribes to the path with `RELIABLE` + `TRANSIENT_LOCAL`, depth 1,
+   matching both planners, so a path published before the executor is up is not missed.
+   (b) The control law moved to `navigation_pkg/path_following.py`; `tests/test_path_executor.py`
+   (which re-implemented the formulas inside the test) was replaced by
+   `tests/test_path_following.py`, which imports the real module. (c) `ROADMAP.md`
+   (an AI-assistant prompt), `Implementation.md` (duplicated this file and the README) and
+   `PHASE8_README_ADDENDUM.md` were removed; anything unique was folded into the README.
+   Verify with one live drive (`navigation_pipeline.launch.py`) that the executor still
+   receives the path and reaches the goal.
 6. **`<gz_frame_id>` schema warning.** `gz sim` prints
    `XML Element[gz_frame_id] … not defined in SDF` for both sensors. It is
    cosmetic — `/scan` still comes through with `frame_id: lidar_link`.
@@ -289,7 +292,7 @@ See README §7 for the full list. The ones that mattered here:
    the Phase 10 savings numbers meaningful (a graph that is not almost all flat).
 3. **Phase 11 - real robot** (Arjuna kit / Jetson): replace the battery model constants
    with measured values.
-4. Address the Phase 9 findings in known issue 5.
+4. Re-run the Phase 9 pipeline once after the executor refactor (known issue 5).
 5. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
    (issue 3).
 
@@ -297,7 +300,7 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 6. Picking this up — quick orientation for the next agent
 
-- **Run the pure-Python tests first** (`python3 -m pytest -q`, 84 pass) — fastest
+- **Run the pure-Python tests first** (`python3 -m pytest -q`, 91 pass) — fastest
   confidence check, no ROS needed.
 - **To bring the sim up:** README §4–§5. On WSL, always `export
   LIBGL_ALWAYS_SOFTWARE=1` first.
