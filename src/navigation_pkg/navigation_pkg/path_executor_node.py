@@ -5,20 +5,39 @@ Phase 9: Path Executor Node.
 Subscribes to a path topic (/path/quantum or /path/classical) and odometry (/odom),
 and publishes velocity commands (/cmd_vel) to drive the lunar rover along the sequence
 of waypoints using a smooth proportional waypoint-following controller.
-"""
 
-import math
+The control law lives in navigation_pkg.path_following (pure Python, unit-tested);
+this node only wires it to ROS.
+"""
 
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry, Path
 from rclpy.node import Node
-from rclpy.qos import qos_profile_sensor_data
+from rclpy.qos import (
+    DurabilityPolicy,
+    QoSProfile,
+    ReliabilityPolicy,
+    qos_profile_sensor_data,
+)
 
-DEFAULT_GOAL_TOLERANCE = 0.5
-DEFAULT_WAYPOINT_TOLERANCE = 0.35
-DEFAULT_MAX_LINEAR = 0.32
-DEFAULT_MAX_ANGULAR = 0.9
+from navigation_pkg.path_following import (
+    DEFAULT_GOAL_TOLERANCE,
+    DEFAULT_MAX_ANGULAR,
+    DEFAULT_MAX_LINEAR,
+    DEFAULT_WAYPOINT_TOLERANCE,
+    WaypointFollower,
+    yaw_from_quaternion,
+)
+
+# The planners publish the path once, RELIABLE + TRANSIENT_LOCAL, depth 1. The
+# subscription must match (a volatile subscriber would miss a path published
+# before this node came up).
+PATH_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.RELIABLE,
+    durability=DurabilityPolicy.TRANSIENT_LOCAL,
+    depth=1,
+)
 
 
 class PathExecutorNode(Node):
@@ -33,15 +52,15 @@ class PathExecutorNode(Node):
         self.declare_parameter("max_linear", DEFAULT_MAX_LINEAR)
         self.declare_parameter("max_angular", DEFAULT_MAX_ANGULAR)
 
-        path_topic = str(self.get_parameter("path_topic").value)
+        self.path_topic = str(self.get_parameter("path_topic").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
         cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
 
         self.path_sub = self.create_subscription(
             Path,
-            path_topic,
+            self.path_topic,
             self._on_path,
-            10,
+            PATH_QOS,
         )
 
         self.odom_sub = self.create_subscription(
@@ -64,13 +83,10 @@ class PathExecutorNode(Node):
         self.yaw = 0.0
 
         self.have_odom = False
-        self.path_received = False
-        self.waypoints = []
-        self.wp_index = 0
-        self.done = False
+        self.follower = None
 
         self.get_logger().info(
-            f"Path executor started. Listening on {path_topic} and {odom_topic}..."
+            f"Path executor started. Listening on {self.path_topic} and {odom_topic}..."
         )
 
     def _on_path(self, msg: Path):
@@ -78,21 +94,20 @@ class PathExecutorNode(Node):
             self.get_logger().warn("Received an empty path message.")
             return
 
-        self.waypoints = [
-            (
-                pose.pose.position.x,
-                pose.pose.position.y,
-            )
+        waypoints = [
+            (pose.pose.position.x, pose.pose.position.y)
             for pose in msg.poses
         ]
+        self.follower = WaypointFollower(
+            waypoints,
+            goal_tolerance=float(self.get_parameter("goal_tolerance").value),
+            waypoint_tolerance=float(self.get_parameter("waypoint_tolerance").value),
+            max_linear=float(self.get_parameter("max_linear").value),
+            max_angular=float(self.get_parameter("max_angular").value),
+        )
 
-        self.wp_index = 0
-        self.done = False
-        self.path_received = True
-
-        path_topic = str(self.get_parameter("path_topic").value)
         self.get_logger().info(
-            f"Received new path on {path_topic} with {len(self.waypoints)} waypoints."
+            f"Received new path on {self.path_topic} with {len(waypoints)} waypoints."
         )
 
     def _on_odom(self, msg: Odometry):
@@ -100,9 +115,7 @@ class PathExecutorNode(Node):
         self.y = msg.pose.pose.position.y
 
         q = msg.pose.pose.orientation
-        siny = 2.0 * (q.w * q.z + q.x * q.y)
-        cosy = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
-        self.yaw = math.atan2(siny, cosy)
+        self.yaw = yaw_from_quaternion(q.x, q.y, q.z, q.w)
 
         if not self.have_odom:
             self.have_odom = True
@@ -113,59 +126,23 @@ class PathExecutorNode(Node):
     def _control_loop(self):
         twist = Twist()
 
-        if not self.have_odom or not self.path_received or self.done:
+        if not self.have_odom or self.follower is None or self.follower.done:
             self.cmd_pub.publish(twist)
             return
 
-        if self.wp_index >= len(self.waypoints):
-            self.done = True
-            self.get_logger().info("Path execution complete. Rover stopped.")
-            self.cmd_pub.publish(twist)
-            return
+        result = self.follower.step(self.x, self.y, self.yaw)
 
-        gx, gy = self.waypoints[self.wp_index]
-        dx = gx - self.x
-        dy = gy - self.y
-        distance = math.hypot(dx, dy)
-
-        is_final_wp = (self.wp_index == len(self.waypoints) - 1)
-        tolerance = float(
-            self.get_parameter("goal_tolerance").value
-            if is_final_wp
-            else self.get_parameter("waypoint_tolerance").value
-        )
-
-        if distance <= tolerance:
+        if result.reached_index is not None:
+            gx, gy = self.follower.waypoints[result.reached_index]
             self.get_logger().info(
-                f"Waypoint {self.wp_index + 1}/{len(self.waypoints)} reached "
-                f"at ({gx:.2f}, {gy:.2f})"
+                f"Waypoint {result.reached_index + 1}/{len(self.follower.waypoints)} "
+                f"reached at ({gx:.2f}, {gy:.2f})"
             )
-            self.wp_index += 1
-
-            if self.wp_index >= len(self.waypoints):
-                self.done = True
+            if result.finished:
                 self.get_logger().info("Final waypoint reached. Rover stopped.")
 
-            self.cmd_pub.publish(twist)
-            return
-
-        target_yaw = math.atan2(dy, dx)
-        yaw_error = math.atan2(
-            math.sin(target_yaw - self.yaw),
-            math.cos(target_yaw - self.yaw),
-        )
-
-        max_angular = float(self.get_parameter("max_angular").value)
-        max_linear = float(self.get_parameter("max_linear").value)
-
-        twist.angular.z = max(-max_angular, min(max_angular, 2.2 * yaw_error))
-
-        speed_scale = max(0.0, 1.0 - abs(yaw_error) / 1.2)
-        twist.linear.x = max(0.0, min(max_linear, 0.9 * distance * speed_scale))
-
-        if abs(yaw_error) > 0.85:
-            twist.linear.x = 0.05
-
+        twist.linear.x = result.linear
+        twist.angular.z = result.angular
         self.cmd_pub.publish(twist)
 
     def stop(self):
@@ -187,4 +164,3 @@ def main(args=None):
 
 if __name__ == "__main__":
     main()
-

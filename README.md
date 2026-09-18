@@ -205,7 +205,6 @@ PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning --start-x
 # Windows PowerShell:
 # $env:PYTHONPATH="src/planning_pkg"; python -m planning_pkg.classical_planning --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
 
-# 8. Visualise & Verify Phase 7 Results
 # 8. Quantum Path Optimization (Phase 8)
 # Mode A: ROS 2 node mode (requires graphml)
 ros2 launch planning_pkg quantum_optimizer.launch.py goal_x:=8.0 goal_y:=0.0
@@ -384,9 +383,9 @@ publishing canonical `/path/classical` (`nav_msgs/msg/Path`) and persisting
 or in RViz. See `docs/PROGRESS.md` and
 `docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`.
 
-Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` formulate path selection as a QUBO and solve via QAOA with Qiskit AerSimulator, using `/odom` for the start and publishing `/path/quantum` (`nav_msgs/msg/Path`) with results saved to `results/paths/latest_quantum.json`. See `PHASE8_README_ADDENDUM.md`.
+Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` formulate path selection as a QUBO and solve via QAOA with Qiskit AerSimulator, using `/odom` for the start and publishing `/path/quantum` (`nav_msgs/msg/Path`) with results saved to `results/paths/latest_quantum.json`. The quantum instance is deliberately reduced to roughly 8-12 edges (a corridor around the A* backbone) so it is tractable on the CPU `AerSimulator`; the resulting macro-edge path is expanded back into the original terrain graph before metrics are reported.
 
-**Phase 9 is done:** `navigation_pkg.path_executor_node` (`path_executor`) subscribes to `/path/quantum` or `/path/classical` and `/odom`, translating waypoints into velocity commands on `/cmd_vel`. `navigation_pipeline.launch.py` connects the full pipeline end-to-end.
+**Phase 9 is done:** `navigation_pkg.path_executor_node` (`path_executor`) subscribes to `/path/quantum` or `/path/classical` and `/odom`, translating waypoints into velocity commands on `/cmd_vel`. `navigation_pipeline.launch.py` connects the full pipeline end-to-end. The control law lives in `navigation_pkg/path_following.py` (pure Python, unit-tested); the node subscribes to the path with `RELIABLE` + `TRANSIENT_LOCAL` QoS to match the planners, so a path published before the executor starts is still received.
 
 **Phase 10 (evaluation) — what it does and does not show.** `evaluation_pkg.metrics`
 compares Dijkstra, A*, the simulated QAOA path and a **distance-only baseline** (shortest
@@ -407,6 +406,7 @@ calling Phase 10 fully verified. See `docs/PROGRESS.md` and
 | Symptom | Cause / fix |
 |---|---|
 | `ros2: command not found` | `source /opt/ros/jazzy/setup.bash` |
+| `ros2 run` says the executable is not found / `bad interpreter` after a Windows checkout | CRLF line endings in the node scripts: `sed -i 's/\r$//' src/sensor_pkg/sensor_pkg/*.py`, then rebuild (`rm -rf build install log && colcon build --symlink-install`) |
 | Package not found after build | `source install/setup.bash` (separate from the ROS 2 source) |
 | Wall of "Depends: … not installable" during Jazzy install | Wrong Ubuntu — need 24.04, not 22.04 |
 | `gz sim` dies with `exit code -11` / render-engine error | WSL/VM GL: `export LIBGL_ALWAYS_SOFTWARE=1`; or switch render engine `ogre2`→`ogre` in `lunar_terrain.world` |
@@ -416,7 +416,7 @@ calling Phase 10 fully verified. See `docs/PROGRESS.md` and
 | `occupancy_grid_node` TF errors | `robot_state_publisher` down, or `lidar_link` missing from the Xacro |
 | `/battery/status` never appears | `battery_monitor` timers follow the sim clock — check `/clock` is bridged, or launch with `use_sim_time:=false` |
 | `evaluator` exits: "Comparison file … not found" | run `python3 -m evaluation_pkg.metrics` first (needs the Phase 7/8 result JSONs) |
-| `/terrain_map` is ~all "crater" | known issue — Hough params in `mapping_params.yaml` need tuning (see `docs/PROGRESS.md`) |
+| `/terrain_map` is ~all "crater" | Hough params in `mapping_params.yaml` too loose for the rock field - use the tightened values already in the file (see `docs/PROGRESS.md`, issue 1) |
 
 ---
 
