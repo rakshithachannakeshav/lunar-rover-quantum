@@ -527,6 +527,7 @@ calling Phase 10 fully verified. See `docs/PROGRESS.md` and
 | Symptom | Cause / fix |
 |---|---|
 | `ros2: command not found` | `source /opt/ros/jazzy/setup.bash` |
+| `ros2 run` / `ros2 launch` says an executable is not found, but the build passed | an `ament_python` package is missing `setup.cfg` (`install_scripts=$base/lib/<pkg>`), so its scripts landed in `install/<pkg>/bin/` instead of `lib/<pkg>/`. Add the file (copy `src/planning_pkg/setup.cfg`, change the package name), then rebuild. `tests/test_package_layout.py` checks every package |
 | Build fails: `CMAKE_C_COMPILER not set` (`rover_simulation` / `sensor_pkg`) | no C compiler: `sudo apt install -y build-essential cmake`, rebuild |
 | `file 'X.launch.py' was not found in the share directory` or `No module named planning_pkg.graph_model` | you are on a stale copy of the repo or a stale overlay: `ros2 pkg prefix <pkg>` must point into your current clone; remove any `source .../install/setup.bash` for another copy from `~/.bashrc`; re-clone if `git log` is old |
 | `pip install` says `externally-managed-environment` | Ubuntu 24.04 PEP 668: `python3 -m pip install --user --break-system-packages <pkg>` |

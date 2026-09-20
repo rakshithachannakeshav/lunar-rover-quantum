@@ -182,6 +182,9 @@ Pure-Python core (no `rclpy`), thin ROS wrappers, file-based I/O like Phases 6-8
   follows `/odom` + `/battery/status`, publishes JSON on `/metrics` at 1 Hz and writes
   `results/energy_comparison/latest_execution.json` on arrival. Fails at start-up if the
   comparison file or the planner is missing.
+- `setup.cfg` installs the console scripts into `lib/evaluation_pkg/` (the other Python
+  packages already had one; `evaluation_pkg` was missing it, so `ros2 run` could not find
+  its nodes - found by a teammate on the Ubuntu box, guarded by `tests/test_package_layout.py`).
 - `launch/evaluation.launch.py` (`planner`, `comparison_path`, `goal_tolerance`,
   `capacity_wh`, `use_sim_time`), console scripts registered in `setup.py`, deps added to
   `package.xml`.
