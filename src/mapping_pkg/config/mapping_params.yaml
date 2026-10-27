@@ -1,10 +1,11 @@
 occupancy_grid_node:
   ros__parameters:
     resolution: 0.05
-    width_m: 30.0
-    height_m: 30.0
-    origin_x: -17.0
-    origin_y: -15.0
+    # 80 m x 80 m (x -30..50, y -40..40) so the far default goal (35, 5) is mapped.
+    width_m: 80.0
+    height_m: 80.0
+    origin_x: -30.0
+    origin_y: -40.0
     l_occ: 0.85
     l_free: -0.4
     l_min: -2.0
