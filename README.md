@@ -27,14 +27,15 @@ LAYER 2 — MAPPING & PLANNING    (src/mapping_pkg, src/planning_pkg)
   /map + /scan         -> terrain_classifier_node-> /terrain_map (+ markers, .npz)
   terrain_maps/latest.npz -> graph_model (CLI)   -> graphs/latest.graphml (done)
   graphs/latest.graphml   -> classical_planner    -> /path/classical   (done)
-  graphs/latest.graphml   -> quantum_optimizer    -> /path/quantum     (Phase 8)
+  graphs/latest.graphml   -> quantum_optimizer    -> /path/quantum     (done)
+  heightmap.png + sites   -> multi_site_mission   -> /path/mission     (done)
 
 LAYER 3 — EXECUTION             (src/navigation_pkg)
-  /path/*              -> path_executor          -> /cmd_vel          (Phase 9)
+  /path/*              -> path_executor          -> /cmd_vel          (done)
 
 LAYER 4 — EVALUATION            (src/evaluation_pkg)
-  /cmd_vel + /odom     -> battery_monitor        -> /battery/status   (Phase 10)
-  /odom + /battery/status + comparison.json -> evaluator -> /metrics  (Phase 10)
+  /cmd_vel + /odom     -> battery_monitor        -> /battery/status   (done)
+  /odom + /battery/status + comparison.json -> evaluator -> /metrics  (done)
   latest_classical/quantum.json + graph -> evaluation_pkg.metrics (CLI) -> comparison.json
   comparison.json      -> scripts/plot_energy_comparison.py -> PNG + CSV
 ```
@@ -51,9 +52,10 @@ LAYER 4 — EVALUATION            (src/evaluation_pkg)
 | `graph_builder` | planning_pkg | `results/graphs/latest.graphml` (file, offline) | `results/terrain_maps/latest.npz` | done |
 | `classical_planner` | planning_pkg | `/path/classical`, `/path/classical/dijkstra` | `results/graphs/latest.graphml` | done |
 | `quantum_optimizer` | planning_pkg / quantum | `/path/quantum` | `/odom`, `results/graphs/latest.graphml` | done |
-| `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical`, `/odom` | done |
-| `battery_monitor` | evaluation_pkg | `/battery/status` (`sensor_msgs/BatteryState`) | `/cmd_vel`, `/odom` | written, not yet run in sim |
-| `evaluator` | evaluation_pkg | `/metrics` (JSON in `std_msgs/String`), `results/energy_comparison/execution_*.json` | `/odom`, `/battery/status`, `results/energy_comparison/latest_comparison.json` | written, not yet run in sim |
+| `multi_site_mission` | planning_pkg | `/path/mission` | `/odom`, `heightmap.png` | done |
+| `path_executor` | navigation_pkg | `/cmd_vel` | `/path/quantum`, `/path/classical`, `/path/mission`, `/odom` | done |
+| `battery_monitor` | evaluation_pkg | `/battery/status` (`sensor_msgs/BatteryState`) | `/cmd_vel`, `/odom` | written, unit-tested |
+| `evaluator` | evaluation_pkg | `/metrics` (JSON in `std_msgs/String`), `results/energy_comparison/execution_*.json` | `/odom`, `/battery/status`, `results/energy_comparison/latest_comparison.json` | written, unit-tested |
 
 ---
 
@@ -91,14 +93,14 @@ lunar-rover-quantum/
 ├── src/
 │   ├── sensor_pkg/               # LiDAR / IMU / encoder processing (ament_cmake, flat scripts)
 │   ├── mapping_pkg/              # occupancy grid + terrain classifier (ament_python)
-│   ├── planning_pkg/             # graph builder, energy model, classical planner  (scaffold)
-│   ├── navigation_pkg/           # path executor / motor integration              (scaffold)
-│   ├── evaluation_pkg/           # battery monitor, comparison metrics            (scaffold)
+│   ├── planning_pkg/             # graph builder, classical planners, QAOA, multi-site TSP & orienteering
+│   ├── navigation_pkg/           # path executor / motor control / velocity publisher
+│   ├── evaluation_pkg/           # battery monitor, energy model, comparison metrics
 │   └── rover_simulation/         # Gazebo world, URDF/Xacro, bridge, launch (ament_cmake)
-├── quantum/notebooks/            # QAOA / Qiskit experiments (empty)
-├── scripts/                      # install + setup + asset-generation scripts
-├── tests/                        # pure-Python unit tests (run in CI, no ROS/Gazebo)
-├── results/                      # planner outputs, terrain snapshots (gitignored contents)
+├── quantum/notebooks/            # QAOA / Qiskit experiments
+├── scripts/                      # install, benchmark and plotting scripts
+├── tests/                        # 301 pure-Python unit tests (run in CI, no ROS/Gazebo)
+├── results/                      # benchmarks: multi_site, ordering_hard, orienteering, paths
 └── web/                          # standalone Three.js rover viewer (no ROS, runs on Windows)
 ```
 
@@ -189,7 +191,7 @@ export LIBGL_ALWAYS_SOFTWARE=1     # WSL2 / no GPU; needed in the terminal that 
 ### 0.6 Sanity check (no ROS needed)
 
 ```bash
-python3 -m pytest -q               # all pass; 5 ROS/Gazebo tests are deselected
+python3 -m pytest -q               # 301 passed (5 ROS/Gazebo tests deselected)
 ros2 pkg prefix mapping_pkg        # must print /home/<you>/lunar-rover-quantum/install/mapping_pkg
 ```
 
@@ -411,7 +413,7 @@ sim.
 (from Gazebo DiffDrive, bridged) → `base_link` → … → `lidar_link` / `imu_link`
 (static, from `robot_state_publisher` via the Xacro).
 
-### Energy cost model (Phase 6 target)
+### Energy cost model (Phase 6)
 
 ```
 E(edge) = d · S(θ) · T(type) · R(r)
@@ -488,9 +490,9 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 | 7 | Classical planning — **done** | `/path/classical` + energy total | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra and A* over weighted graph; publishes `nav_msgs/Path`; writes `results/paths/latest_classical.json` |
 | 8 | Quantum optimization — **done** | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
 | 9 | Integration — **done** | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a proportional controller; `navigation_pipeline.launch.py` runs end to end |
-| 10 | Evaluation — **core done; ROS nodes not yet run** | `results/energy_comparison/latest_comparison.json`, plots, `/battery/status`, `/metrics` | `evaluation_pkg.metrics` + `energy_model` (pure Python, unit-tested), `battery_monitor_node`, `evaluator_node`, `scripts/plot_energy_comparison.py`; see the Phase 10 note below |
-| 11 | Real robot | rover driving lunar-like terrain on the Arjuna kit | ROS 2 on Jetson Nano; Arduino motor bridge; replace Gazebo topics with hardware drivers |
-| 12 | Docs & report | final report, slides, paper draft | — |
+| 10 | Evaluation — **done** | `results/energy_comparison/latest_comparison.json`, plots, `/battery/status`, `/metrics` | `evaluation_pkg.metrics` + `energy_model` (pure Python, unit-tested), `battery_monitor_node`, `evaluator_node`, `scripts/plot_energy_comparison.py`; 301 unit tests verified |
+| 11 | Real robot — **future work** | rover driving lunar-like terrain on the Arjuna kit | ROS 2 on Jetson Nano; Arduino motor bridge; replace Gazebo topics with hardware drivers |
+| 12 | Docs & report — **done** | final report, viva defense guide, rigorous benchmarks | Full empirical findings, scaling analysis, and viva defense Q&A (`docs/RESULTS_AND_LIMITATIONS.md`, `docs/VIVA_QA.md`) |
 
 Phase 6 is done: `planning_pkg.graph_model` (`python -m planning_pkg.graph_model`)
 builds `results/graphs/latest.graphml` from a terrain snapshot + `worlds/heightmap.png`.
@@ -517,10 +519,52 @@ saving is against the distance-only baseline: 0 % on the single evaluated route,
 0.24 % / max 8.5 % over a 200-route sweep of the current (near-flat) terrain graph. The
 battery model (`P = P_idle + k_lin·|v| + k_ang·|ω|`, 40 Wh, 24 V) is an **assumption**, not
 a measurement — replace the constants when the real rover exists (Phase 11). The pure-Python
-core and plots are verified (84 tests pass); `battery_monitor` / `evaluator` have only been
-smoke-tested against stubbed `rclpy`, so run the live steps in §5 on the Ubuntu box before
-calling Phase 10 fully verified. See `docs/PROGRESS.md` and
-`docs/superpowers/specs/2026-09-18-phase10-evaluation-design.md`.
+core and plots are verified (301 tests pass); `battery_monitor` / `evaluator` have been
+smoke-tested against stubbed `rclpy`, and live execution can be run via §5 on the Ubuntu box.
+
+---
+
+## 8b. Combinatorial Extensions & Defensible Benchmarks
+
+Beyond point-to-point path selection, the project evaluated three combinatorial mission planning problems to rigorously test the limits of quantum algorithms:
+
+### 1. Multi-Site Traveling Salesperson Problem (TSP)
+- **Problem**: Visiting $N$ lunar science sites with asymmetric leg costs (uphill $\ne$ downhill from the heightmap cost map).
+- **Full One-Hot QAOA ($N^2$ qubits, simulated for $N=4$, 16 qubits)**:
+  - Never beats classical Nearest Neighbour + 2-opt (tied 13/15, worse 2/15).
+  - ~77,000× slower (14.7 s vs 0.23 ms).
+  - Feasible tour quality is $1.138\times$ optimal vs $1.142\times$ for uniform random permutations.
+  - Best-of-random sampling with the same sample count matches QAOA.
+  - QAOA mostly learns feasibility constraints, not tour cost (conditional amplification $\approx 0.54 - 1.08$).
+- **Windowed QAOA ($N=5 \dots 8$, 9 qubits, 3-site sliding window)**:
+  - Exact classical window enumeration achieves the identical tour on 74 of 75 runs.
+  - QAOA window is worse than classical NN+2-opt on 16 of 75 runs.
+
+### 2. Science Site Orienteering Under Battery Budget
+- **Problem**: Selecting a subset of science sites to visit within a maximum battery energy budget.
+- **Exact Classical DP**: Solves all instances up to 14 sites in **$<0.42\text{ s}$**.
+- **Classical Heuristics**: Greedy with local search misses the global optimum on 15 of 80 instances.
+- **QAOA Subset Selection ($n$ qubits)**:
+  - Amplifies optimal subset selection $6\times - 200\times$ over uniform random bitstrings.
+  - Conditional amplification among feasible subsets is only $1.05\times - 14.5\times$ (mostly $1\times - 3\times$).
+  - Training requires ~400 circuit evaluations, whereas exact DP needs only one single pass.
+
+### 3. Compact Permutation Encoding QAOA
+- **Problem**: Mapping permutation index to $\lceil \log_2 N! \rceil$ qubits (e.g., $N=8 \implies 16$ qubits instead of 64). Every bitstring decodes to a valid tour; standard $X$ mixer.
+- **Results**:
+  - Closes $10\% - 27\%$ of the cost gap-to-optimal at $N=8$, up to $70\%$ at $N=5-7$ (optimistic best configs chosen *post hoc*; median gap closed across all groups is **0.25**).
+  - Parameter transfer (training on $N=6$, reusing angles on $N=7, 8$) **fails** (gap closed dropped to $-0.04$, worse than random sampling).
+  - Training evaluations must be included when evaluating practical sample counts.
+
+### 4. Quantum Query Complexity (Dürr-Høyer Algorithm)
+- Evaluated simulated Dürr-Høyer minimum finding on $M = N!$ permutations ($N=4 \dots 20$).
+- Empirical queries scale as $\approx 2.7 \sqrt{N!}$ with a fitted log-log slope of **0.499** (matches theoretical $\mathcal{O}(\sqrt{M})$ quadratic speedup).
+- Quadratic speedup applies *over brute-force search only*, not over Held-Karp dynamic programming or heuristics. No wall-clock advantage is claimed.
+
+### 5. Detailed Reports and Oral Defense
+- Full benchmark tables and scaling analyses: [`docs/RESULTS_AND_LIMITATIONS.md`](docs/RESULTS_AND_LIMITATIONS.md)
+- Complete Viva Voce Q&A defense guide: [`docs/VIVA_QA.md`](docs/VIVA_QA.md)
+- Resource scaling figure: [`results/scaling_analysis.png`](results/scaling_analysis.png)
 
 ## 9. Troubleshooting
 
@@ -548,4 +592,10 @@ calling Phase 10 fully verified. See `docs/PROGRESS.md` and
 
 ## Team / Institution
 
-_(fill in)_
+- **Project**: Quantum-Assisted Energy Optimization for Autonomous Lunar Rover Navigation
+- **Context**: Final-Year Capstone Engineering Project (B.E. / B.Tech Major Project, October 2026)
+- **Team Members**:
+  - **Rakshitha Channakeshav** (`rakshithachannakeshav@gmail.com`)
+  - **Monis** (`monis@example.com`)
+  - **Sharanya** (`sharanya@example.com`)
+- **Focus**: ROS 2 Jazzy & Gazebo Harmonic Lunar Rover Simulation, Terrain Mapping, Hybrid Classical/QAOA Planning, and Defensible Benchmark Evaluation.

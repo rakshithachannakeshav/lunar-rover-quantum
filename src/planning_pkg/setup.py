@@ -17,6 +17,7 @@ setup(
                 'launch/classical_planner.launch.py',
                 'launch/quantum_navigation.launch.py',
                 'launch/quantum_optimizer.launch.py',
+                'launch/multi_site_mission.launch.py',
             ],
         ),
     ],
@@ -31,6 +32,7 @@ setup(
         'console_scripts': [
             'classical_planner_node = planning_pkg.classical_planner_node:main',
             'quantum_optimizer_node = planning_pkg.quantum_optimizer_node:main',
+            'multi_site_mission_node = planning_pkg.multi_site_mission_node:main',
         ],
     },
 )

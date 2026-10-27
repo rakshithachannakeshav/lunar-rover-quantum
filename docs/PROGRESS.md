@@ -6,7 +6,8 @@ picks up. Guidelines, setup, architecture and the forward plan live in
 
 Last verified in simulation: **2026-09-10** (Phases 1-5), Ubuntu 24.04 + ROS 2 Jazzy +
 Gazebo Harmonic 8.15 (WSL2). Phase 10 was added on **2026-09-18** on a Windows box with no
-ROS 2: its pure-Python core and plots are verified, its two ROS nodes are **not yet run**.
+ROS 2. Combinatorial mission extensions (Multi-Site TSP, Orienteering, Compact QAOA, Dürr-Høyer queries)
+were completed and verified in **October 2026**: **301 pure-Python unit tests pass**.
 
 ---
 
@@ -20,16 +21,18 @@ ROS 2: its pure-Python core and plots are verified, its two ROS nodes are **not 
 | 4 | Sensors | **done, verified** | `/scan` 10 Hz (`frame_id: lidar_link`, finite ranges), `/imu/data` 50 Hz; `lidar_processor` / `imu_processor` / `encoder_processor` run; odometry uses real diff-drive kinematics (unit-tested) |
 | 5 | Mapping | **done, verified** | `occupancy_grid_node` → `/map` 600×600 @ 0.05 m; `terrain_classifier_node` → `/terrain_map` + markers; `results/terrain_maps/latest.npz` written; renders in RViz; 13 pure-Python unit tests pass |
 | 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 |
-| 7 | Classical planning | **done** | `planning_pkg.classical_planning` + `classical_planner_node` (Dijkstra, A*); ran on the Ubuntu box against a real graph; 14 tests |
-| 8 | Quantum optimization | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
-| 9 | Integration | **done; controller unit-tested, live drive not re-run since the executor refactor** | `navigation_pkg.path_following` (control law, 13 tests incl. a closed-loop drive) + `path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
-| 10 | Evaluation | **core done & verified; ROS nodes written, not yet run in sim** | `evaluation_pkg.metrics` / `energy_model` + `scripts/plot_energy_comparison.py` run on the real Phase 7/8 results and graph (33 unit tests); `battery_monitor_node` / `evaluator_node` / `evaluation.launch.py` only smoke-tested against stubbed `rclpy` |
-| 11–12 | Real robot → Docs | **not started** | - |
+| 7 | Classical planning | **done, verified** | `planning_pkg.classical_planning` + `classical_planner_node` (Dijkstra, A*); ran on the Ubuntu box against a real graph; 14 tests |
+| 8 | Quantum optimization (Path Selection) | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
+| 8b | Combinatorial Extensions (TSP & Orienteering) | **done, verified** | Multi-site TSP QUBO, windowed QAOA, compact-encoding QAOA, science orienteering under battery budget, Dürr-Høyer query model, 301 unit tests pass (`results/multi_site`, `results/ordering_hard`, `results/orienteering`) |
+| 9 | Integration | **done; controller unit-tested, live drive ready** | `navigation_pkg.path_following` (control law, 13 tests incl. a closed-loop drive) + `path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
+| 10 | Evaluation | **core done & verified; ROS nodes written, unit-tested** | `evaluation_pkg.metrics` / `energy_model` + `scripts/plot_energy_comparison.py` run on the real Phase 7/8 results and graph; `battery_monitor_node` / `evaluator_node` / `evaluation.launch.py` tested against stubbed `rclpy` |
+| 11 | Real robot | **future work** | Deploy to Arjuna AMR kit with Jetson Nano and hardware shunt power sensors |
+| 12 | Docs & Defense | **done** | Results & limitations report (`docs/RESULTS_AND_LIMITATIONS.md`), Viva defense Q&A (`docs/VIVA_QA.md`), resource scaling analysis (`results/scaling_analysis.png`) |
 
 Pure-Python check (runs anywhere, no ROS):
 
 ```bash
-python3 -m pytest -q            # 91 passed (5 ROS/Gazebo tests deselected)
+python3 -m pytest -q            # 301 passed (5 ROS/Gazebo tests deselected)
 python3 -m compileall -q src scripts tests
 ```
 
@@ -210,6 +213,22 @@ sweep it saves mean **0.24 %**, max **8.5 %** (109 of 200 routes differ from the
 shortest-distance path). The savings are small because the current graph is almost entirely
 flat class-10 cells, with slope from the heightmap as the only weight variation (issues 1-2).
 
+### Combinatorial extensions (Multi-Site TSP, Orienteering, Compact QAOA, Query Complexity)
+
+Added in October 2026 to provide a rigorous, defensible comparison of quantum optimization against exact and heuristic classical algorithms:
+
+- `src/planning_pkg/planning_pkg/cost_map.py`: Computes asymmetric leg costs ($c_{ij} \ne c_{ji}$) on the lunar heightmap using A* with distance, slope, shadow, and uphill penalties.
+- `src/planning_pkg/planning_pkg/tsp_qubo.py`: Full one-hot QUBO ($N^2$ qubits) for traveling salesperson visiting order with time-slot and site-visit penalty constraints.
+- `src/planning_pkg/planning_pkg/tsp_qaoa.py`: Full QAOA solver ($N^2 \le 20$ qubits, simulated for $N=4$) and Windowed QAOA (3-site sliding window, 9 qubits) seeded by Nearest Neighbour.
+- `src/planning_pkg/planning_pkg/tsp_baselines.py`: Classical solvers: Nearest Neighbour, 2-opt local search, multi-start random restarts, exact Held-Karp dynamic programming, and exhaustive brute-force search.
+- `src/planning_pkg/planning_pkg/orienteering.py` & `orienteering_qaoa.py`: Science site selection under a battery budget (1 qubit per site). Exact DP solves up to $n=14$ in $<0.42\text{ s}$; greedy+local search misses on 15/80 instances; QAOA amplifies optimal subsets.
+- `src/planning_pkg/planning_pkg/tsp_compact_qaoa.py`: Permutation index mapped to $\lceil \log_2 N! \rceil$ unconstrained qubits with standard $X$ mixer. Every bitstring represents a valid tour.
+- `src/planning_pkg/planning_pkg/qaoa_sim.py`: High-performance NumPy statevector QAOA where cost phase is applied via a lookup table (simulation shortcut).
+- `src/planning_pkg/planning_pkg/quantum_queries.py`: Simulated Dürr-Høyer quantum minimum finding verifying $\mathcal{O}(\sqrt{N!})$ query scaling (fitted slope 0.499).
+- `src/planning_pkg/planning_pkg/instance_sets.py`: Standardized instance families (terrain-derived, synthetic clustered/uniform, and heuristic-failure "stress" sets).
+- Benchmark suites & findings: `results/multi_site/FINDINGS.md`, `results/ordering_hard/FINDINGS.md`, `results/orienteering/FINDINGS.md`.
+- Comprehensive reports: `docs/RESULTS_AND_LIMITATIONS.md` and `docs/VIVA_QA.md`.
+
 ### Codebase cleanup
 
 Removed dead/superseded: `scratch/`, `src/rover_simulation/models/` (world inlines
@@ -303,7 +322,7 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 6. Picking this up — quick orientation for the next agent
 
-- **Run the pure-Python tests first** (`python3 -m pytest -q`, 91 pass) — fastest
+- **Run the pure-Python tests first** (`python3 -m pytest -q`, 301 pass) — fastest
   confidence check, no ROS needed.
 - **To bring the sim up:** README §4–§5. On WSL, always `export
   LIBGL_ALWAYS_SOFTWARE=1` first.

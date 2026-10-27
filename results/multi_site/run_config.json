@@ -1,0 +1,42 @@
+{
+  "n_min": 4,
+  "n_max": 8,
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "heightmap": "D:\\lunar-rover-quantum\\src\\rover_simulation\\worlds\\heightmap.png",
+  "resolution": 1.0,
+  "w_dist": 1.0,
+  "w_slope": 2.0,
+  "w_shadow": 1.5,
+  "w_uphill": 30.0,
+  "sun_elevation": 3.0,
+  "sun_azimuth": 135.0,
+  "min_separation": 10.0,
+  "max_radius": 60.0,
+  "open": false,
+  "reps": [
+    1
+  ],
+  "cvar_alpha": [
+    1.0,
+    0.5,
+    0.2
+  ],
+  "optimizer": "COBYLA",
+  "maxiter": 150,
+  "restarts": 2,
+  "shots": 4096,
+  "penalty": 1.5,
+  "max_qubits": 20,
+  "window": 3,
+  "brute_force_max": 10,
+  "no_window": false,
+  "out": "D:\\lunar-rover-quantum\\results\\multi_site",
+  "generated_at": "2026-10-14T23:43:42.180269",
+  "wall_time_s": 1344.6806631999789
+}
