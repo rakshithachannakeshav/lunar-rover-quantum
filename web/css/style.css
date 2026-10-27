@@ -221,11 +221,34 @@ body {
   position: fixed;
   top: 5rem;
   z-index: 10;
-  width: 226px;
+  width: 240px;
   display: flex;
   flex-direction: column;
   gap: 0.7rem;
   pointer-events: none;
+  max-height: calc(100vh - 7.5rem);
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: 1rem;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255,255,255,0.15) transparent;
+}
+
+.hud::-webkit-scrollbar {
+  width: 5px;
+}
+
+.hud::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.hud::-webkit-scrollbar-thumb {
+  background: rgba(255,255,255,0.15);
+  border-radius: 4px;
+}
+
+.hud::-webkit-scrollbar-thumb:hover {
+  background: rgba(255,255,255,0.3);
 }
 
 .hud button,
@@ -233,16 +256,19 @@ body {
 .hud .dpad,
 .hud .cam-btns,
 .hud canvas,
-.hud .quantum-display {
+.hud .quantum-display,
+.hud .panel {
   pointer-events: auto;
 }
 
 .hud.left {
   left: 1rem;
+  pointer-events: auto;
 }
 
 .hud.right {
   right: 1rem;
+  pointer-events: auto;
 }
 
 .panel {
@@ -445,6 +471,24 @@ dd.goal-dd {
   background: var(--accent-dim);
 }
 
+/* ── Sensor Data Panels ──────────────────────────────────────────── */
+.sensor-panel {
+  border-color: rgba(96, 165, 250, 0.12);
+}
+
+.sensor-panel h2 {
+  color: var(--blue);
+}
+
+.sensor-val {
+  color: var(--blue) !important;
+  font-variant-numeric: tabular-nums;
+}
+
+.danger-text {
+  color: var(--danger) !important;
+}
+
 /* ── Quantum AI bars ─────────────────────────────────────────────── */
 .quantum-display {
   display: flex;
@@ -555,6 +599,213 @@ dd.goal-dd {
   opacity: 0.25;
 }
 
+/* ── Algorithm Results Panel ──────────────────────────────────────── */
+.results-panel {
+  border-color: rgba(96, 165, 250, 0.15);
+}
+
+.algo-results {
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+
+.algo-block {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.algo-block:last-of-type {
+  border-bottom: none;
+}
+
+.algo-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.4rem;
+  font-size: 0.72rem;
+}
+
+.algo-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.algo-header strong {
+  font-weight: 600;
+  font-size: 0.74rem;
+}
+
+.dijkstra-header strong {
+  color: var(--success);
+}
+
+.astar-header strong {
+  color: var(--blue);
+}
+
+.mono-val {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.algo-comparison {
+  font-size: 0.66rem;
+  color: var(--muted);
+  padding: 0.4rem 0.5rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 6px;
+  text-align: center;
+  line-height: 1.5;
+}
+
+.res-match {
+  color: var(--success);
+  font-weight: 600;
+}
+
+.res-delta {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.res-speed {
+  color: var(--blue);
+}
+
+/* ── Algorithm mode tabs ─────────────────────────────────────────── */
+.tab-algo {
+  position: relative;
+}
+
+.tab-algo::before {
+  content: "⚡";
+  margin-right: 0.2rem;
+  font-size: 0.65rem;
+}
+
+/* ── QAOA quantum tab ────────────────────────────────────────────── */
+.tab-quantum {
+  position: relative;
+}
+
+.tab-quantum::before {
+  content: "⚛";
+  margin-right: 0.2rem;
+  font-size: 0.75rem;
+}
+
+.tab-quantum.active {
+  background: rgba(192, 132, 252, 0.15);
+  color: #c084fc;
+  border-color: rgba(192, 132, 252, 0.4);
+}
+
+/* ── QAOA Results Panel ──────────────────────────────────────────── */
+.qaoa-panel {
+  border-color: rgba(192, 132, 252, 0.2);
+}
+
+.qaoa-panel h2 {
+  color: #c084fc;
+}
+
+.qaoa-panel h2::before {
+  background: #c084fc;
+}
+
+.qaoa-header strong {
+  color: #c084fc;
+}
+
+.qaoa-accent {
+  color: #c084fc !important;
+}
+
+.qaoa-comparison {
+  border-top: 1px solid rgba(192, 132, 252, 0.15);
+}
+
+.res-quantum-win {
+  color: #c084fc;
+  font-weight: 600;
+}
+
+/* ── Auto mode tab ───────────────────────────────────────────────── */
+.tab-auto {
+  position: relative;
+}
+
+.tab-auto::before {
+  content: "🏆";
+  margin-right: 0.2rem;
+  font-size: 0.6rem;
+}
+
+.tab-auto.active {
+  background: linear-gradient(135deg, rgba(52, 211, 153, 0.12), rgba(192, 132, 252, 0.12));
+  color: #f59e0b;
+  border-color: rgba(245, 158, 11, 0.4);
+}
+
+/* ── Auto Winner Panel ───────────────────────────────────────────── */
+.auto-winner-panel {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.auto-winner-box {
+  font-size: 0.72rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 8px;
+  text-align: center;
+  line-height: 1.6;
+  color: var(--muted);
+}
+
+.auto-winner-box strong {
+  font-weight: 700;
+}
+
+.auto-winner-box em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.winner-icon {
+  font-size: 0.9rem;
+}
+
+/* ── Path Legend ──────────────────────────────────────────────────── */
+.path-legend {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.legend-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+}
+
+.legend-swatch {
+  display: inline-block;
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+  flex-shrink: 0;
+}
+
 /* ── responsive ──────────────────────────────────────────────────── */
 @media (max-width: 960px) {
   .hud {
@@ -585,4 +836,109 @@ dd.goal-dd {
   .panel h2::before {
     display: none;
   }
+}
+/* ── Terrain panel & benchmark ───────────────────────────────────── */
+.terrain-panel .hint {
+  margin-top: 0.45rem;
+}
+
+.bench-btn {
+  width: 100%;
+  margin-top: 0.5rem;
+  font-family: var(--font);
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.45rem 0.5rem;
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.bench-btn:hover:not(:disabled) {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+.bench-btn:disabled {
+  opacity: 0.6;
+  cursor: wait;
+}
+
+.bench-panel {
+  border-color: rgba(245, 158, 11, 0.2);
+}
+
+.bench-out {
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.5;
+}
+
+.bench-out em {
+  color: var(--accent);
+  font-style: normal;
+  font-weight: 600;
+}
+
+.bench-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--mono);
+  font-size: 0.64rem;
+}
+
+.bench-table th,
+.bench-table td {
+  padding: 0.2rem 0.25rem;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+
+.bench-table th:first-child,
+.bench-table td:first-child {
+  text-align: left;
+  font-family: var(--font);
+}
+
+.bench-table th {
+  font-weight: 600;
+}
+
+.bench-table td {
+  color: var(--text);
+}
+
+.bench-table .bench-win {
+  font-weight: 700;
+  color: #f59e0b;
+}
+
+.bench-table .bench-fail {
+  color: var(--danger);
+}
+
+.bench-table tfoot td {
+  color: var(--muted);
+  border-bottom: none;
+}
+
+.bench-table tfoot tr:first-child td {
+  border-top: 1px solid var(--border);
+}
+
+.bench-table .bench-overall::before {
+  content: "★ ";
+  color: #f59e0b;
+}
+
+.bench-champ {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.5rem;
+  background: rgba(245, 158, 11, 0.08);
+  border-radius: 6px;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--text);
 }

@@ -45,6 +45,10 @@
         aria-selected="true">Manual</button>
       <button id="tab-patrol" type="button" class="tab" data-mode="patrol" role="tab" aria-selected="false">Patrol
         AI</button>
+      <button id="tab-astar" type="button" class="tab tab-algo" data-mode="astar" role="tab" aria-selected="false">A*</button>
+      <button id="tab-dijkstra" type="button" class="tab tab-algo" data-mode="dijkstra" role="tab" aria-selected="false">Dijkstra</button>
+      <button id="tab-qaoa" type="button" class="tab tab-quantum" data-mode="qaoa" role="tab" aria-selected="false">QAOA</button>
+      <button id="tab-auto" type="button" class="tab tab-auto" data-mode="auto" role="tab" aria-selected="false">Auto</button>
     </div>
 
     <div class="top-info">
@@ -93,9 +97,105 @@
         </div>
         <div class="stat-row">
           <dt>Terrain</dt>
-          <dd>Lunar regolith</dd>
+          <dd id="stat-terrain">Flat</dd>
         </div>
       </dl>
+    </section>
+
+    <!-- ── Algorithm Results Panel ──────────────────────────── -->
+    <section class="panel results-panel" id="results-panel">
+      <h2>Path Planning Results</h2>
+      <div class="algo-results">
+        <div class="algo-block">
+          <div class="algo-header dijkstra-header">
+            <span class="algo-dot" style="background:#34d399;"></span>
+            <strong>Dijkstra</strong>
+          </div>
+          <dl class="stats">
+            <div class="stat-row"><dt>Energy</dt><dd id="res-dijk-energy" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Distance</dt><dd id="res-dijk-dist" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Waypoints</dt><dd id="res-dijk-wp" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Runtime</dt><dd id="res-dijk-time" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Climb ↑</dt><dd id="res-dijk-climb" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Descent ↓</dt><dd id="res-dijk-desc" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Max slope</dt><dd id="res-dijk-slope" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Nodes</dt><dd id="res-dijk-nodes" class="mono-val">—</dd></div>
+          </dl>
+        </div>
+        <div class="algo-block">
+          <div class="algo-header astar-header">
+            <span class="algo-dot" style="background:#60a5fa;"></span>
+            <strong>A*</strong>
+          </div>
+          <dl class="stats">
+            <div class="stat-row"><dt>Energy</dt><dd id="res-astar-energy" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Distance</dt><dd id="res-astar-dist" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Waypoints</dt><dd id="res-astar-wp" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Runtime</dt><dd id="res-astar-time" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Climb ↑</dt><dd id="res-astar-climb" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Descent ↓</dt><dd id="res-astar-desc" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Max slope</dt><dd id="res-astar-slope" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Nodes</dt><dd id="res-astar-nodes" class="mono-val">—</dd></div>
+          </dl>
+        </div>
+        <div class="algo-comparison" id="res-comparison">
+          Select A* or Dijkstra mode to compute paths
+        </div>
+      </div>
+    </section>
+
+    <!-- ── QAOA Quantum Results Panel ───────────────────────── -->
+    <section class="panel results-panel qaoa-panel" id="qaoa-panel">
+      <h2>⚛ QAOA Quantum</h2>
+      <div class="algo-results">
+        <div class="algo-block">
+          <div class="algo-header qaoa-header">
+            <span class="algo-dot" style="background:#c084fc;"></span>
+            <strong>QAOA Path</strong>
+          </div>
+          <dl class="stats">
+            <div class="stat-row"><dt>Energy</dt><dd id="res-qaoa-energy" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Distance</dt><dd id="res-qaoa-dist" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Waypoints</dt><dd id="res-qaoa-wp" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Runtime</dt><dd id="res-qaoa-time" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Climb ↑</dt><dd id="res-qaoa-climb" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Descent ↓</dt><dd id="res-qaoa-desc" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Max slope</dt><dd id="res-qaoa-slope" class="mono-val">—</dd></div>
+            <div class="stat-row"><dt>Nodes</dt><dd id="res-qaoa-nodes" class="mono-val">—</dd></div>
+          </dl>
+        </div>
+        <div class="algo-block">
+          <div class="algo-header qaoa-header">
+            <span class="algo-dot" style="background:#c084fc;"></span>
+            <strong>Circuit Info</strong>
+          </div>
+          <dl class="stats">
+            <div class="stat-row"><dt>Qubits</dt><dd id="res-qaoa-qubits" class="mono-val qaoa-accent">—</dd></div>
+            <div class="stat-row"><dt>Shots</dt><dd id="res-qaoa-shots" class="mono-val qaoa-accent">—</dd></div>
+            <div class="stat-row"><dt>Depth</dt><dd id="res-qaoa-reps" class="mono-val qaoa-accent">—</dd></div>
+            <div class="stat-row"><dt>⟨C⟩</dt><dd id="res-qaoa-expect" class="mono-val qaoa-accent">—</dd></div>
+            <div class="stat-row"><dt>Valid</dt><dd id="res-qaoa-valid" class="mono-val qaoa-accent">—</dd></div>
+          </dl>
+        </div>
+        <div class="algo-comparison qaoa-comparison" id="res-qaoa-comparison">
+          Select QAOA mode to run quantum optimisation
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Auto Winner ──────────────────────────────────────── -->
+    <section class="panel auto-winner-panel" id="auto-winner-panel">
+      <h2>🏆 Algorithm Comparison</h2>
+      <div class="auto-winner-box" id="auto-winner" style="display:none;">
+        Select any algorithm mode to compare
+      </div>
+    </section>
+
+    <section class="panel bench-panel" id="bench-panel">
+      <h2>⛰ Terrain Benchmark</h2>
+      <div id="bench-out" class="bench-out">
+        Run <em>Benchmark all terrains</em> (right panel) to compare every algorithm on every slope profile.
+      </div>
     </section>
 
     <section class="panel mini-map-panel">
@@ -132,6 +232,62 @@
       <p class="hint orbit-hint">Orbit: drag · scroll to zoom</p>
     </section>
 
+    <section class="panel terrain-panel">
+      <h2>⛰ Terrain</h2>
+      <div class="cam-btns" role="group" aria-label="Terrain profile">
+        <button type="button" class="cam-btn terrain-btn active" data-terrain="flat">Flat</button>
+        <button type="button" class="cam-btn terrain-btn" data-terrain="rolling">Rolling</button>
+        <button type="button" class="cam-btn terrain-btn" data-terrain="hill">Hill</button>
+        <button type="button" class="cam-btn terrain-btn" data-terrain="crater">Crater</button>
+        <button type="button" class="cam-btn terrain-btn" data-terrain="ridge">Ridge</button>
+      </div>
+      <p class="hint" id="terrain-desc">Gentle undulation only — the baseline.</p>
+      <p class="hint">Uphill costs more, gentle downhill less; &gt; 25° is impassable. Switching resets the rover to spawn.</p>
+      <button type="button" id="btn-benchmark" class="bench-btn">Benchmark all terrains</button>
+    </section>
+
+    <!-- ── Sensor Data Panels ──────────────────────────────── -->
+    <section class="panel sensor-panel">
+      <h2>🔦 LiDAR</h2>
+      <dl class="stats">
+        <div class="stat-row"><dt>Nearest</dt><dd id="sens-lidar-near" class="mono-val sensor-val">— m</dd></div>
+        <div class="stat-row"><dt>Angle</dt><dd id="sens-lidar-angle" class="mono-val sensor-val">—°</dd></div>
+        <div class="stat-row"><dt>Hit pts</dt><dd id="sens-lidar-pts" class="mono-val sensor-val">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel sensor-panel">
+      <h2>📐 IMU</h2>
+      <dl class="stats">
+        <div class="stat-row"><dt>Slope</dt><dd id="sens-imu-slope" class="mono-val sensor-val">—°</dd></div>
+        <div class="stat-row"><dt>Pitch</dt><dd id="sens-imu-pitch" class="mono-val sensor-val">—°</dd></div>
+        <div class="stat-row"><dt>Accel X</dt><dd id="sens-imu-ax" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Accel Z</dt><dd id="sens-imu-az" class="mono-val sensor-val">—</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel sensor-panel">
+      <h2>⚙ Odometry</h2>
+      <dl class="stats">
+        <div class="stat-row"><dt>Odom X</dt><dd id="sens-odom-x" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Odom Z</dt><dd id="sens-odom-z" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Heading</dt><dd id="sens-odom-theta" class="mono-val sensor-val">—°</dd></div>
+        <div class="stat-row"><dt>Distance</dt><dd id="sens-odom-dist" class="mono-val sensor-val">— m</dd></div>
+        <div class="stat-row"><dt>Climb ↑</dt><dd id="sens-odom-climb" class="mono-val sensor-val">— m</dd></div>
+        <div class="stat-row"><dt>Descent ↓</dt><dd id="sens-odom-desc" class="mono-val sensor-val">— m</dd></div>
+      </dl>
+    </section>
+
+    <section class="panel sensor-panel">
+      <h2>🔋 Energy</h2>
+      <dl class="stats">
+        <div class="stat-row"><dt>Power</dt><dd id="sens-power" class="mono-val sensor-val">— W</dd></div>
+        <div class="stat-row"><dt>Current</dt><dd id="sens-current" class="mono-val sensor-val">— A</dd></div>
+        <div class="stat-row"><dt>Gravity</dt><dd id="sens-grav-power" class="mono-val sensor-val">— W</dd></div>
+        <div class="stat-row"><dt>Used</dt><dd id="sens-consumed" class="mono-val sensor-val">— kJ</dd></div>
+      </dl>
+    </section>
+
     <section class="panel">
       <h2>Quantum AI</h2>
       <div class="quantum-display">
@@ -155,6 +311,37 @@
             <div class="q-fill" id="q-hazard" style="width:91%"></div>
           </div>
           <span class="q-pct">91%</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- ── Path Legend ──────────────────────────────────────── -->
+    <section class="panel">
+      <h2>Path Legend</h2>
+      <div class="path-legend">
+        <div class="legend-row">
+          <span class="legend-swatch" style="background:#34d399;"></span>
+          <span>Dijkstra (shortest distance, slope-blind)</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-swatch" style="background:#60a5fa;"></span>
+          <span>A* (energy-aware heuristic search)</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-swatch" style="background:#c084fc;"></span>
+          <span>QAOA (energy-aware, quantum sampled)</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-swatch" style="background:#ff3333; opacity:0.5;"></span>
+          <span>Obstacle zone</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-swatch" style="background:#c9893f;"></span>
+          <span>Steep ground (tinted by slope)</span>
+        </div>
+        <div class="legend-row">
+          <span class="legend-swatch" style="background:#a8443a;"></span>
+          <span>Impassable (&gt; 25°)</span>
         </div>
       </div>
     </section>
