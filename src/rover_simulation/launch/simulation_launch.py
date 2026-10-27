@@ -56,8 +56,10 @@ def generate_launch_description():
     use_rviz = LaunchConfiguration('use_rviz')
     use_sim_time = LaunchConfiguration('use_sim_time')
 
+    # launch shlex-splits a Command string, so quote the path or a workspace
+    # under a folder with a space (e.g. "Lunar rover") breaks xacro.
     robot_description = ParameterValue(
-        Command([FindExecutable(name='xacro'), ' ', urdf_file]),
+        Command([FindExecutable(name='xacro'), ' "', urdf_file, '"']),
         value_type=str,
     )
 

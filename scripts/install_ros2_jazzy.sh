@@ -17,11 +17,11 @@ else
 fi
 
 echo "=== STEP 4: UPDATING ROSDEP ==="
-# Run rosdep update as the normal user (monis), not sudo/root
+# Run rosdep update as the normal user, not sudo/root
 rosdep update
 
 echo "=== STEP 5: CONFIGURING BASHRC SOURCE ==="
-BASHRC="/home/monis/.bashrc"
+BASHRC="${HOME}/.bashrc"
 SOURCE_LINE="source /opt/ros/jazzy/setup.bash"
 if ! grep -Fxq "$SOURCE_LINE" "$BASHRC"; then
     echo "$SOURCE_LINE" >> "$BASHRC"

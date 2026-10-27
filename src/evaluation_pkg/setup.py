@@ -23,6 +23,9 @@ setup(
     license='MIT',
     tests_require=['pytest'],
     entry_points={
-        'console_scripts': [],
+        'console_scripts': [
+            'battery_monitor_node = evaluation_pkg.battery_monitor_node:main',
+            'evaluator_node = evaluation_pkg.evaluator_node:main',
+        ],
     },
 )

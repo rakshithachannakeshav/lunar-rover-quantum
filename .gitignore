@@ -35,4 +35,7 @@ results/paths/*
 results/classical_paths/*
 results/quantum_paths/*
 results/energy_comparison/*
+results/missions/*
 !results/**/.gitkeep
+# results/multi_site/ is kept: the committed benchmark snapshot referenced by
+# docs/multi_site_mission.md (regenerate with scripts/benchmark_multi_site.py).

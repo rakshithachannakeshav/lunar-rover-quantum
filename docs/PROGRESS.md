@@ -4,8 +4,10 @@ What has been built and verified, what is assumed, and where the next agent
 picks up. Guidelines, setup, architecture and the forward plan live in
 [`../README.md`](../README.md).
 
-Last verified: **2026-09-10**, Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 8.15
-(WSL2).
+Last verified in simulation: **2026-09-10** (Phases 1-5), Ubuntu 24.04 + ROS 2 Jazzy +
+Gazebo Harmonic 8.15 (WSL2). Phase 10 was added on **2026-09-18** on a Windows box with no
+ROS 2. Combinatorial mission extensions (Multi-Site TSP, Orienteering, Compact QAOA, Dürr-Høyer queries)
+were completed and verified in **October 2026**: **301 pure-Python unit tests pass**.
 
 ---
 
@@ -19,14 +21,18 @@ Last verified: **2026-09-10**, Ubuntu 24.04 + ROS 2 Jazzy + Gazebo Harmonic 8.15
 | 4 | Sensors | **done, verified** | `/scan` 10 Hz (`frame_id: lidar_link`, finite ranges), `/imu/data` 50 Hz; `lidar_processor` / `imu_processor` / `encoder_processor` run; odometry uses real diff-drive kinematics (unit-tested) |
 | 5 | Mapping | **done, verified** | `occupancy_grid_node` → `/map` 600×600 @ 0.05 m; `terrain_classifier_node` → `/terrain_map` + markers; `results/terrain_maps/latest.npz` written; renders in RViz; 13 pure-Python unit tests pass |
 | 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 |
-| 8 | Quantum optimization | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
-| 9 | Integration | **done, verified** | `navigation_pkg.path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
-| 10–12 | Evaluation → Docs | **not started** | `evaluation_pkg` is scaffolding only |
+| 7 | Classical planning | **done, verified** | `planning_pkg.classical_planning` + `classical_planner_node` (Dijkstra, A*); ran on the Ubuntu box against a real graph; 14 tests |
+| 8 | Quantum optimization (Path Selection) | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
+| 8b | Combinatorial Extensions (TSP & Orienteering) | **done, verified** | Multi-site TSP QUBO, windowed QAOA, compact-encoding QAOA, science orienteering under battery budget, Dürr-Høyer query model, 301 unit tests pass (`results/multi_site`, `results/ordering_hard`, `results/orienteering`) |
+| 9 | Integration | **done; controller unit-tested, live drive ready** | `navigation_pkg.path_following` (control law, 13 tests incl. a closed-loop drive) + `path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
+| 10 | Evaluation | **core done & verified; ROS nodes written, unit-tested** | `evaluation_pkg.metrics` / `energy_model` + `scripts/plot_energy_comparison.py` run on the real Phase 7/8 results and graph; `battery_monitor_node` / `evaluator_node` / `evaluation.launch.py` tested against stubbed `rclpy` |
+| 11 | Real robot | **future work** | Deploy to Arjuna AMR kit with Jetson Nano and hardware shunt power sensors |
+| 12 | Docs & Defense | **done** | Results & limitations report (`docs/RESULTS_AND_LIMITATIONS.md`), Viva defense Q&A (`docs/VIVA_QA.md`), resource scaling analysis (`results/scaling_analysis.png`) |
 
 Pure-Python check (runs anywhere, no ROS):
 
 ```bash
-python3 -m pytest -q            # 40 passed
+python3 -m pytest -q            # 301 passed (5 ROS/Gazebo tests deselected)
 python3 -m compileall -q src scripts tests
 ```
 
@@ -152,6 +158,77 @@ New `src/planning_pkg/planning_pkg/classical_planning.py` and `classical_planner
 - `launch/classical_planner.launch.py`: Launch description for node and arguments.
 - 14 new pure-Python unit tests in `tests/test_classical_planning.py` (40 total passing).
 
+### evaluation_pkg - Phase 10 evaluation
+
+Pure-Python core (no `rclpy`), thin ROS wrappers, file-based I/O like Phases 6-8.
+
+- `evaluation_pkg/metrics.py`
+  - `load_planner_metrics(classical_json, quantum_json)` -> `PlannerMetrics` for
+    `dijkstra`, `astar`, `qaoa` (node ids normalised, `[29, 33]` -> `"(29, 33)"`).
+  - `distance_only_baseline(graph, start, goal)` - shortest path by Euclidean edge
+    length, then **re-priced with the real energy weights**: the energy-unaware planner
+    the energy-aware ones are compared against.
+  - `baseline_sweep(graph, n_pairs, seed, min_separation_m)` - seeded random start/goal
+    pairs in the largest connected component; energy-optimal vs distance-only per pair,
+    with a summary (mean / median / max saving, routes that differ).
+  - `build_comparison` / `save_comparison` -> `results/energy_comparison/latest_comparison.json`
+    (+ timestamped copy). Summary flags `qaoa_matches_classical` (tolerance 1e-6*max(1,E)),
+    `qaoa_energy_ratio`, `qaoa_fallback`, `qaoa_runtime_ratio_vs_astar`.
+  - `execution_report` + `ExecutionMonitor` - planned vs actual distance/energy for one
+    drive; goal detection; the tally freezes on arrival.
+  - CLI: `PYTHONPATH=src/evaluation_pkg python3 -m evaluation_pkg.metrics [--sweep N] ...`
+- `evaluation_pkg/energy_model.py` - `BatteryModel` (`P = P_idle + k_lin*|v| + k_ang*|w|`,
+  integrated over `dt`; SoC clamped to [0, 1]) and `DistanceTracker`.
+- `evaluation_pkg/battery_monitor_node.py` - `/cmd_vel` + `/odom` -> `/battery/status`
+  (`sensor_msgs/BatteryState`). A `/cmd_vel` older than `cmd_timeout_s` counts as idle.
+- `evaluation_pkg/evaluator_node.py` - loads one planner's path from the comparison file,
+  follows `/odom` + `/battery/status`, publishes JSON on `/metrics` at 1 Hz and writes
+  `results/energy_comparison/latest_execution.json` on arrival. Fails at start-up if the
+  comparison file or the planner is missing.
+- `setup.cfg` installs the console scripts into `lib/evaluation_pkg/` (the other Python
+  packages already had one; `evaluation_pkg` was missing it, so `ros2 run` could not find
+  its nodes - found by a teammate on the Ubuntu box, guarded by `tests/test_package_layout.py`).
+- `launch/evaluation.launch.py` (`planner`, `comparison_path`, `goal_tolerance`,
+  `capacity_wh`, `use_sim_time`), console scripts registered in `setup.py`, deps added to
+  `package.xml`.
+- `scripts/plot_energy_comparison.py` - `energy_comparison.png` (energy / distance /
+  runtime per planner), `route_sweep.png` (savings histogram), `path_overlay.png`
+  (paths on the graph + the biggest-saving sweep route), `comparison_table.csv`;
+  `--theme light|dark`. Palette checked for colour-vision deficiency; the CSV is the
+  non-colour view.
+- Tests: `tests/test_battery_model.py` (12), `tests/test_evaluation_metrics.py` (21).
+
+**Result on the real project data (be honest about this):**
+
+| | energy | distance | runtime |
+|---|---|---|---|
+| Dijkstra | 2.828 | 2.83 m | 1.0 ms |
+| A* | 2.828 | 2.83 m | 0.25 ms |
+| QAOA (simulated) | 2.828 | 2.83 m | 5 554 ms |
+| distance-only | 2.828 | 2.83 m | 1.1 ms |
+
+QAOA **matches** the classical optimum (ratio 1.00, no fallback) and is ~2x10^4 times
+slower; it does not beat A*. Energy-aware planning saves 0 % on this route; over a 200-route
+sweep it saves mean **0.24 %**, max **8.5 %** (109 of 200 routes differ from the
+shortest-distance path). The savings are small because the current graph is almost entirely
+flat class-10 cells, with slope from the heightmap as the only weight variation (issues 1-2).
+
+### Combinatorial extensions (Multi-Site TSP, Orienteering, Compact QAOA, Query Complexity)
+
+Added in October 2026 to provide a rigorous, defensible comparison of quantum optimization against exact and heuristic classical algorithms:
+
+- `src/planning_pkg/planning_pkg/cost_map.py`: Computes asymmetric leg costs ($c_{ij} \ne c_{ji}$) on the lunar heightmap using A* with distance, slope, shadow, and uphill penalties.
+- `src/planning_pkg/planning_pkg/tsp_qubo.py`: Full one-hot QUBO ($N^2$ qubits) for traveling salesperson visiting order with time-slot and site-visit penalty constraints.
+- `src/planning_pkg/planning_pkg/tsp_qaoa.py`: Full QAOA solver ($N^2 \le 20$ qubits, simulated for $N=4$) and Windowed QAOA (3-site sliding window, 9 qubits) seeded by Nearest Neighbour.
+- `src/planning_pkg/planning_pkg/tsp_baselines.py`: Classical solvers: Nearest Neighbour, 2-opt local search, multi-start random restarts, exact Held-Karp dynamic programming, and exhaustive brute-force search.
+- `src/planning_pkg/planning_pkg/orienteering.py` & `orienteering_qaoa.py`: Science site selection under a battery budget (1 qubit per site). Exact DP solves up to $n=14$ in $<0.42\text{ s}$; greedy+local search misses on 15/80 instances; QAOA amplifies optimal subsets.
+- `src/planning_pkg/planning_pkg/tsp_compact_qaoa.py`: Permutation index mapped to $\lceil \log_2 N! \rceil$ unconstrained qubits with standard $X$ mixer. Every bitstring represents a valid tour.
+- `src/planning_pkg/planning_pkg/qaoa_sim.py`: High-performance NumPy statevector QAOA where cost phase is applied via a lookup table (simulation shortcut).
+- `src/planning_pkg/planning_pkg/quantum_queries.py`: Simulated Dürr-Høyer quantum minimum finding verifying $\mathcal{O}(\sqrt{N!})$ query scaling (fitted slope 0.499).
+- `src/planning_pkg/planning_pkg/instance_sets.py`: Standardized instance families (terrain-derived, synthetic clustered/uniform, and heuristic-failure "stress" sets).
+- Benchmark suites & findings: `results/multi_site/FINDINGS.md`, `results/ordering_hard/FINDINGS.md`, `results/orienteering/FINDINGS.md`.
+- Comprehensive reports: `docs/RESULTS_AND_LIMITATIONS.md` and `docs/VIVA_QA.md`.
+
 ### Codebase cleanup
 
 Removed dead/superseded: `scratch/`, `src/rover_simulation/models/` (world inlines
@@ -167,15 +244,16 @@ shebangs, and commented cruft in `rover_simulation/CMakeLists.txt` /
 
 ## 3. Known issues
 
-1. **Terrain classifier over-triggers craters.** A representative run gave
-   `/terrain_map` counts `flat 9 325 / rocky 0 / crater_interior 161 440 /
-   obstacle 5 792` — ~87 % of known cells labelled crater, "rocky" never fires.
-   The pipeline is correct; the parameters in
-   `src/mapping_pkg/config/mapping_params.yaml` are wrong for this terrain.
-   Suggested direction: `hough_param2` 20 → ~35–40, `crater_max_radius_px` 80 →
-   ~25, `hough_min_dist` 15 → ~40, require rim support before flooding an
-   interior; `roughness_threshold` 0.02 → lower, and check the variance window.
-   Needs edit → relaunch `mapping.launch.py` → re-check `cell_counts` iterations.
+1. **Terrain classifier: crater over-triggering fixed; "rocky" never fires (accepted).**
+   The original run labelled ~87 % of known cells crater (`flat 9 325 / rocky 0 /
+   crater_interior 161 440 / obstacle 5 792`). The Hough parameters in
+   `src/mapping_pkg/config/mapping_params.yaml` were then tightened (`hough_param2` 20 -> 50,
+   crater radius 8-80 -> 25-55 px, `hough_min_dist` 15 -> 80, `roughness_threshold` 0.02 ->
+   0.005); the 2026-09-14 snapshot (`results/terrain_maps/latest_meta.json`) reads `flat 212 159 /
+   rocky 0 / crater 0 / obstacle 118 / unknown 147 723`. Two caveats: the world has **no real
+   craters**, so crater detection is now effectively switched off, not validated on real ones;
+   and `rocky` still never fires because on flat ground the LiDAR only returns off the rock
+   models. Both need contour terrain (issue 2) to revisit - loosen the Hough parameters then.
 2. **Flat terrain.** The heightmap relief is gone (DART limitation, above). The
    2-D LiDAR scans horizontally at rover height, so on flat ground it only
    returns off the rock models — `/map` is free space + rock obstacles, not the
@@ -185,7 +263,21 @@ shebangs, and commented cruft in `rover_simulation/CMakeLists.txt` /
 3. **Rock / goal-marker heights.** Rocks and the goal marker were placed for the
    old terrain elevation; on the flat z 0.375 ground a few sit slightly high or
    low. Cosmetic.
-4. **`<gz_frame_id>` schema warning.** `gz sim` prints
+4. **Phase 10 ROS nodes are unverified in simulation.** The battery model is an assumption
+   (see section 4); `evaluator` counts energy from its first battery sample, so idle time
+   before the rover starts moving is included; `execution_efficiency` (= planned / actual
+   distance) is only meaningful after arrival.
+5. **Phase 9 review findings - fixed 2026-09-18, not yet re-run in simulation.**
+   (a) `path_executor` now subscribes to the path with `RELIABLE` + `TRANSIENT_LOCAL`, depth 1,
+   matching both planners, so a path published before the executor is up is not missed.
+   (b) The control law moved to `navigation_pkg/path_following.py`; `tests/test_path_executor.py`
+   (which re-implemented the formulas inside the test) was replaced by
+   `tests/test_path_following.py`, which imports the real module. (c) `ROADMAP.md`
+   (an AI-assistant prompt), `Implementation.md` (duplicated this file and the README) and
+   `PHASE8_README_ADDENDUM.md` were removed; anything unique was folded into the README.
+   Verify with one live drive (`navigation_pipeline.launch.py`) that the executor still
+   receives the path and reaches the goal.
+6. **`<gz_frame_id>` schema warning.** `gz sim` prints
    `XML Element[gz_frame_id] … not defined in SDF` for both sensors. It is
    cosmetic — `/scan` still comes through with `frame_id: lidar_link`.
 
@@ -213,24 +305,36 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 5. Next steps
 
-1. **Phase 10 — Evaluation Package** (`evaluation_pkg`): build `battery_monitor` node (integrates linear/angular motion energy) and `evaluator` node (publishes `/metrics` comparing classical A* vs QAOA quantum execution efficiency and runtime).
-2. **Tune the terrain classifier** (issue 1). Small, self-contained, needs the
-   running sim. Deliverable: `mapping_params.yaml` values that give a sane
-   flat/rocky/crater/obstacle split, plus a note in this file.
-3. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
+1. **Verify Phase 10 in simulation** (needs the Ubuntu box): run Gazebo + the Phase 9
+   pipeline + `ros2 launch evaluation_pkg evaluation.launch.py planner:=<astar|qaoa>`;
+   confirm `/battery/status` falls while driving, `/metrics` updates, and
+   `latest_execution.json` appears on arrival. Then flip the Phase 10 row to "verified".
+2. **Restore contour terrain** (issue 2, Bullet physics), then re-tune the classifier
+   (issue 1). This is what would make the Phase 10 savings numbers meaningful: the energy
+   graph is almost all flat because the world is.
+3. **Phase 11 - real robot** (Arjuna kit / Jetson): replace the battery model constants
+   with measured values.
+4. Re-run the Phase 9 pipeline once after the executor refactor (known issue 5).
+5. Optional polish: Bullet physics for contour terrain (issue 2); re-seat rocks
    (issue 3).
 
 ---
 
 ## 6. Picking this up — quick orientation for the next agent
 
-- **Run the pure-Python tests first** (`python3 -m pytest -q`, 40 pass) — fastest
+- **Run the pure-Python tests first** (`python3 -m pytest -q`, 301 pass) — fastest
   confidence check, no ROS needed.
 - **To bring the sim up:** README §4–§5. On WSL, always `export
   LIBGL_ALWAYS_SOFTWARE=1` first.
 - **Phase 7 Planner entry point:**
   - CLI: `python -m planning_pkg.classical_planning --start-x 0 --start-y 0 --goal-x 10 --goal-y 10`
   - ROS 2: `ros2 launch planning_pkg classical_planner.launch.py goal_x:=10.0 goal_y:=10.0`
+- **Phase 10 entry points:**
+  - CLI: `PYTHONPATH=src/evaluation_pkg python3 -m evaluation_pkg.metrics --sweep 200`, then
+    `python3 scripts/plot_energy_comparison.py`
+  - ROS 2: `ros2 launch evaluation_pkg evaluation.launch.py planner:=qaoa`
+  - Outputs: `results/energy_comparison/latest_comparison.json`, `latest_execution.json`,
+    PNGs + `comparison_table.csv`; topics `/battery/status`, `/metrics`
 - **Output contracts:**
   - `results/paths/latest_classical.json` (contains both Dijkstra & A* results + comparison)
   - `/path/classical` (`nav_msgs/msg/Path`, published by A*)
@@ -238,3 +342,4 @@ See README §7 for the full list. The ones that mattered here:
 - **Design specs:**
   - Phase 6: `docs/superpowers/specs/2026-09-11-phase6-energy-graph-design.md`
   - Phase 7: `docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`
+  - Phase 10: `docs/superpowers/specs/2026-09-18-phase10-evaluation-design.md`
