@@ -26,7 +26,10 @@ class MultiSiteMissionNode(Node):
 
         self.declare_parameter("heightmap_path", "src/rover_simulation/worlds/heightmap.png")
         # Flat list [x1, y1, x2, y2, ...] of science sites in the map frame.
-        self.declare_parameter("sites", [10.0, 10.0, -12.0, 8.0, 15.0, -10.0, -8.0, -14.0])
+        # Default: 12 sites spread over the 150 m map (~1 km closed tour).
+        self.declare_parameter("sites", [35.0, 30.0, -30.0, 40.0, 45.0, -25.0, -40.0, -35.0,
+                                         10.0, 55.0, -55.0, 5.0, 55.0, 10.0, 0.0, -50.0,
+                                         20.0, -15.0, -15.0, 20.0, -20.0, -15.0, 25.0, 25.0])
         self.declare_parameter("solver", "qaoa")
         self.declare_parameter("return_to_depot", True)
         self.declare_parameter("resolution", 1.0)

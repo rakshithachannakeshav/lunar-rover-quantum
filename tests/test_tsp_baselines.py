@@ -210,3 +210,18 @@ def test_count_optimal_orders():
     assert n_opt == sum(
         1 for o in __import__("itertools").permutations(range(1, 6))
         if tour_cost(asym, o) <= held_karp(asym).cost + 1e-9)
+
+
+@pytest.mark.parametrize("closed", [True, False])
+def test_held_karp_matches_brute_force_on_asymmetric(closed):
+    for n in (1, 2, 5, 8):
+        cost = random_cost(n, seed=n, symmetric=False)
+        assert held_karp(cost, closed).cost == pytest.approx(brute_force(cost, closed).cost)
+
+
+def test_held_karp_scales_to_larger_missions():
+    cost = random_cost(16, seed=3)
+    result = held_karp(cost)
+    validate_tour(result.order, 16)
+    assert result.cost == pytest.approx(tour_cost(cost, result.order))
+    assert result.cost <= nn_two_opt(cost).cost + 1e-9

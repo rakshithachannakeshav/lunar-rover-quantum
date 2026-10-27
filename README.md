@@ -99,7 +99,7 @@ lunar-rover-quantum/
 │   └── rover_simulation/         # Gazebo world, URDF/Xacro, bridge, launch (ament_cmake)
 ├── quantum/notebooks/            # QAOA / Qiskit experiments
 ├── scripts/                      # install, benchmark and plotting scripts
-├── tests/                        # 301 pure-Python unit tests (run in CI, no ROS/Gazebo)
+├── tests/                        # 323 pure-Python unit tests (run in CI, no ROS/Gazebo)
 ├── results/                      # benchmarks: multi_site, ordering_hard, orienteering, paths
 └── web/                          # standalone Three.js rover viewer (no ROS, runs on Windows)
 ```
@@ -191,7 +191,7 @@ export LIBGL_ALWAYS_SOFTWARE=1     # WSL2 / no GPU; needed in the terminal that 
 ### 0.6 Sanity check (no ROS needed)
 
 ```bash
-python3 -m pytest -q               # 301 passed (5 ROS/Gazebo tests deselected)
+python3 -m pytest -q               # 323 passed (5 ROS/Gazebo tests deselected)
 ros2 pkg prefix mapping_pkg        # must print /home/<you>/lunar-rover-quantum/install/mapping_pkg
 ```
 
@@ -490,7 +490,7 @@ Phases 1–5 are done (see `docs/PROGRESS.md`). Remaining:
 | 7 | Classical planning — **done** | `/path/classical` + energy total | `planning_pkg.classical_planning` (offline CLI + `classical_planner_node`); Dijkstra and A* over weighted graph; publishes `nav_msgs/Path`; writes `results/paths/latest_classical.json` |
 | 8 | Quantum optimization — **done** | `/path/quantum` + energy total | Formulate path choice as **QUBO** (edge-selection binaries, penalty terms for start/goal/continuity/no-branching); solve with **QAOA** on `AerSimulator`; keep the graph small (≈8–12 edges) for a tractable demo; decode best bitstring → path |
 | 9 | Integration — **done** | sensor → map → graph → planner → `/cmd_vel` running end to end | `path_executor` in `navigation_pkg`: follow `nav_msgs/Path` waypoints with a proportional controller; `navigation_pipeline.launch.py` runs end to end |
-| 10 | Evaluation — **done** | `results/energy_comparison/latest_comparison.json`, plots, `/battery/status`, `/metrics` | `evaluation_pkg.metrics` + `energy_model` (pure Python, unit-tested), `battery_monitor_node`, `evaluator_node`, `scripts/plot_energy_comparison.py`; 301 unit tests verified |
+| 10 | Evaluation — **done** | `results/energy_comparison/latest_comparison.json`, plots, `/battery/status`, `/metrics` | `evaluation_pkg.metrics` + `energy_model` (pure Python, unit-tested), `battery_monitor_node`, `evaluator_node`, `scripts/plot_energy_comparison.py`; 323 unit tests verified |
 | 11 | Real robot — **future work** | rover driving lunar-like terrain on the Arjuna kit | ROS 2 on Jetson Nano; Arduino motor bridge; replace Gazebo topics with hardware drivers |
 | 12 | Docs & report — **done** | final report, viva defense guide, rigorous benchmarks | Full empirical findings, scaling analysis, and viva defense Q&A (`docs/RESULTS_AND_LIMITATIONS.md`, `docs/VIVA_QA.md`) |
 
@@ -519,7 +519,7 @@ saving is against the distance-only baseline: 0 % on the single evaluated route,
 0.24 % / max 8.5 % over a 200-route sweep of the current (near-flat) terrain graph. The
 battery model (`P = P_idle + k_lin·|v| + k_ang·|ω|`, 40 Wh, 24 V) is an **assumption**, not
 a measurement — replace the constants when the real rover exists (Phase 11). The pure-Python
-core and plots are verified (301 tests pass); `battery_monitor` / `evaluator` have been
+core and plots are verified (323 tests pass); `battery_monitor` / `evaluator` have been
 smoke-tested against stubbed `rclpy`, and live execution can be run via §5 on the Ubuntu box.
 
 ---

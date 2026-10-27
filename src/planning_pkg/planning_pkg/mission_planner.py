@@ -51,7 +51,7 @@ from planning_pkg.tsp_baselines import (
 from planning_pkg.tsp_qaoa import QaoaConfig, solve_tour_qaoa, solve_tour_qaoa_windowed
 
 SOLVERS = ("qaoa", "exact", "nn_2opt")
-MIN_SITES, MAX_SITES = 1, 10
+MIN_SITES, MAX_SITES = 1, 20  # Held-Karp ('exact') needs O(2^N N) memory
 
 
 @dataclass

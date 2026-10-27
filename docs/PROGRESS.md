@@ -7,7 +7,7 @@ picks up. Guidelines, setup, architecture and the forward plan live in
 Last verified in simulation: **2026-09-10** (Phases 1-5), Ubuntu 24.04 + ROS 2 Jazzy +
 Gazebo Harmonic 8.15 (WSL2). Phase 10 was added on **2026-09-18** on a Windows box with no
 ROS 2. Combinatorial mission extensions (Multi-Site TSP, Orienteering, Compact QAOA, Dürr-Høyer queries)
-were completed and verified in **October 2026**: **301 pure-Python unit tests pass**.
+were completed and verified in **October 2026**: **323 pure-Python unit tests pass**.
 
 ---
 
@@ -23,7 +23,7 @@ were completed and verified in **October 2026**: **301 pure-Python unit tests pa
 | 6 | Energy modeling | **done, verified** | `planning_pkg.graph_model` (load/coarsen/sample_elevation/build_graph/save_graph/load_graph + CLI); 13 pure-Python unit tests; run against a real Gazebo-produced `latest.npz` → 94 nodes, 266 edges, weight range 0.50–1.19 |
 | 7 | Classical planning | **done, verified** | `planning_pkg.classical_planning` + `classical_planner_node` (Dijkstra, A*); ran on the Ubuntu box against a real graph; 14 tests |
 | 8 | Quantum optimization (Path Selection) | **done, verified** | `planning_pkg.quantum_optimizer` (corridor reduction, QUBO, Ising conversion, QAOA via Qiskit Aer, unit tests, ROS 2 node publishing `/path/quantum`) |
-| 8b | Combinatorial Extensions (TSP & Orienteering) | **done, verified** | Multi-site TSP QUBO, windowed QAOA, compact-encoding QAOA, science orienteering under battery budget, Dürr-Høyer query model, 301 unit tests pass (`results/multi_site`, `results/ordering_hard`, `results/orienteering`) |
+| 8b | Combinatorial Extensions (TSP & Orienteering) | **done, verified** | Multi-site TSP QUBO, windowed QAOA, compact-encoding QAOA, science orienteering under battery budget, Dürr-Høyer query model, 323 unit tests pass (`results/multi_site`, `results/ordering_hard`, `results/orienteering`) |
 | 9 | Integration | **done; controller unit-tested, live drive ready** | `navigation_pkg.path_following` (control law, 13 tests incl. a closed-loop drive) + `path_executor_node` (`path_executor` & `quantum_path_executor`), `navigation_pipeline.launch.py` connecting planner to rover `/cmd_vel` |
 | 10 | Evaluation | **core done & verified; ROS nodes written, unit-tested** | `evaluation_pkg.metrics` / `energy_model` + `scripts/plot_energy_comparison.py` run on the real Phase 7/8 results and graph; `battery_monitor_node` / `evaluator_node` / `evaluation.launch.py` tested against stubbed `rclpy` |
 | 11 | Real robot | **future work** | Deploy to Arjuna AMR kit with Jetson Nano and hardware shunt power sensors |
@@ -32,7 +32,7 @@ were completed and verified in **October 2026**: **301 pure-Python unit tests pa
 Pure-Python check (runs anywhere, no ROS):
 
 ```bash
-python3 -m pytest -q            # 301 passed (5 ROS/Gazebo tests deselected)
+python3 -m pytest -q            # 323 passed (5 ROS/Gazebo tests deselected)
 python3 -m compileall -q src scripts tests
 ```
 
@@ -322,7 +322,7 @@ See README §7 for the full list. The ones that mattered here:
 
 ## 6. Picking this up — quick orientation for the next agent
 
-- **Run the pure-Python tests first** (`python3 -m pytest -q`, 301 pass) — fastest
+- **Run the pure-Python tests first** (`python3 -m pytest -q`, 323 pass) — fastest
   confidence check, no ROS needed.
 - **To bring the sim up:** README §4–§5. On WSL, always `export
   LIBGL_ALWAYS_SOFTWARE=1` first.

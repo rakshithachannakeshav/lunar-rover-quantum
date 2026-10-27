@@ -24,8 +24,8 @@ def generate_launch_description():
         default_value="results/graphs/latest.graphml",
         description="Path to NetworkX weighted graphml file",
     )
-    goal_x_arg = DeclareLaunchArgument("goal_x", default_value="8.0")
-    goal_y_arg = DeclareLaunchArgument("goal_y", default_value="0.0")
+    goal_x_arg = DeclareLaunchArgument("goal_x", default_value="35.0")
+    goal_y_arg = DeclareLaunchArgument("goal_y", default_value="5.0")
 
     planner_mode = LaunchConfiguration("planner_mode")
 

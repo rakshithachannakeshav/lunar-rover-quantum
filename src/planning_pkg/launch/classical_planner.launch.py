@@ -50,13 +50,13 @@ def generate_launch_description():
 
     goal_x_arg = DeclareLaunchArgument(
         'goal_x',
-        default_value='10.0',
+        default_value='35.0',
         description='Goal world X position in meters.',
     )
 
     goal_y_arg = DeclareLaunchArgument(
         'goal_y',
-        default_value='10.0',
+        default_value='5.0',
         description='Goal world Y position in meters.',
     )
 

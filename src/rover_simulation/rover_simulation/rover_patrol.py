@@ -12,6 +12,8 @@ from rclpy.qos import qos_profile_sensor_data
 WAYPOINTS = [
     (-2.0, 0.0), (-1.0, 0.0), (0.0, 0.0), (1.0, 0.1), (2.0, 0.3),
     (3.0, 0.5), (4.0, 0.7), (5.0, 0.8), (6.0, 0.7), (7.0, 0.4), (8.0, 0.0),
+    # far leg: south of rock_f (20, 2.9), then up to the goal at (35, 5)
+    (14.0, -2.0), (20.0, -2.0), (26.0, -2.0), (30.5, 1.5), (35.0, 5.0),
 ]
 
 GOAL_TOLERANCE = 0.5
@@ -41,7 +43,7 @@ class RoverPatrol(Node):
         self._logged_fallback = False
 
         self.get_logger().info(
-            'Patrol started — creeping forward until /odom, then following trail to (8,0).'
+            'Patrol started — creeping forward until /odom, then following trail to (35,5).'
         )
 
     def _elapsed(self) -> float:

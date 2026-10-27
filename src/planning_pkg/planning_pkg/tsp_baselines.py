@@ -119,29 +119,29 @@ def count_optimal_orders(cost: np.ndarray, closed: bool = True, rel_tol: float =
 
 
 def held_karp(cost: np.ndarray, closed: bool = True) -> TourResult:
-    """Exact optimum via the Held-Karp subset DP."""
+    """Exact optimum via the Held-Karp subset DP, vectorised over all subsets
+    of the same size (practical up to N ~ 20)."""
     cost = np.asarray(cost, dtype=np.float64)
     n = n_sites(cost)
     started = time.perf_counter()
     full = (1 << n) - 1
+    sites = cost[1:, 1:]
     # dp[mask][j]: cheapest path from depot visiting `mask`, ending at site j+1.
     dp = np.full((1 << n, n), np.inf)
-    parent = np.full((1 << n, n), -1, dtype=np.int64)
+    parent = np.full((1 << n, n), -1, dtype=np.int8)
+    masks = np.arange(1 << n)
+    popcount = np.zeros(1 << n, dtype=np.int8)
     for j in range(n):
+        popcount += ((masks >> j) & 1).astype(np.int8)
         dp[1 << j, j] = cost[0, j + 1]
-    for mask in range(1, 1 << n):
-        row = dp[mask]
-        for j in range(n):
-            if not (mask >> j) & 1 or not np.isfinite(row[j]):
-                continue
-            for k in range(n):
-                if (mask >> k) & 1:
-                    continue
-                nmask = mask | (1 << k)
-                cand = row[j] + cost[j + 1, k + 1]
-                if cand < dp[nmask, k]:
-                    dp[nmask, k] = cand
-                    parent[nmask, k] = j
+    for size in range(2, n + 1):
+        layer = masks[popcount == size]
+        for k in range(n):
+            sub = layer[(layer >> k) & 1 == 1] ^ (1 << k)  # masks with k removed
+            cand = dp[sub] + sites[:, k]                    # (subsets, j)
+            j = np.argmin(cand, axis=1)
+            dp[sub | (1 << k), k] = cand[np.arange(len(sub)), j]
+            parent[sub | (1 << k), k] = j
     finals = dp[full] + (cost[1:, 0] if closed else 0.0)
     last = int(np.argmin(finals))
     order: List[int] = []

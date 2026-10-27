@@ -50,10 +50,10 @@ class OccupancyGridNode(Node):
 
         # ── Declare Parameters ────────────────────────────────────────────────
         self.declare_parameter('resolution', 0.05)
-        self.declare_parameter('width_m', 30.0)
-        self.declare_parameter('height_m', 30.0)
-        self.declare_parameter('origin_x', -17.0)
-        self.declare_parameter('origin_y', -15.0)
+        self.declare_parameter('width_m', 80.0)
+        self.declare_parameter('height_m', 80.0)
+        self.declare_parameter('origin_x', -30.0)
+        self.declare_parameter('origin_y', -40.0)
         self.declare_parameter('l_occ', 0.85)
         self.declare_parameter('l_free', -0.4)
         self.declare_parameter('l_min', -2.0)

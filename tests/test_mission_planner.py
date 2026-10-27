@@ -14,6 +14,7 @@ if PKG_DIR not in sys.path:
 
 from planning_pkg.cost_map import build_cost_map, synthetic_elevation
 from planning_pkg.mission_planner import (
+    MAX_SITES,
     build_instance,
     plan_mission,
     sample_sites,
@@ -70,6 +71,16 @@ def test_classical_pipeline_visits_every_site_once(terrain, solver, closed):
         assert plan.tour_cost == pytest.approx(held_karp(inst.leg_costs, closed).cost)
 
 
+def test_large_mission_exact_beats_heuristic(terrain):
+    cm, G = terrain
+    sites = sample_sites(G, 14, seed=6, min_separation_m=5.0)
+    exact = plan_mission(G, cm, (0.0, 0.0), sites, solver="exact")
+    heuristic = plan_mission(G, cm, (0.0, 0.0), sites, solver="nn_2opt")
+    validate_tour(exact.order, 14)
+    assert_path_is_connected(G, exact.path_nodes)
+    assert exact.tour_cost <= heuristic.tour_cost + 1e-9
+
+
 def test_stitch_rejects_invalid_order(terrain):
     cm, G = terrain
     inst = build_instance(G, cm, (0.0, 0.0), sample_sites(G, 3, seed=2, min_separation_m=6.0))
@@ -80,7 +91,7 @@ def test_stitch_rejects_invalid_order(terrain):
 def test_too_many_or_duplicate_sites_raise(terrain):
     cm, G = terrain
     with pytest.raises(ValueError):
-        build_instance(G, cm, (0.0, 0.0), [(1.0, 1.0)] * 11)
+        build_instance(G, cm, (0.0, 0.0), [(1.0, 1.0)] * (MAX_SITES + 1))
     with pytest.raises(ValueError):
         build_instance(G, cm, (0.0, 0.0), [(5.45, 5.45), (5.55, 5.55)])  # same cell
     with pytest.raises(ValueError):

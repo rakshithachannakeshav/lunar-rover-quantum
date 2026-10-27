@@ -3,7 +3,9 @@
 
 Example:
   ros2 launch planning_pkg multi_site_mission.launch.py \
-      sites:="[10.0, 10.0, -12.0, 8.0, 15.0, -10.0, -8.0, -14.0]" solver:=qaoa
+      sites:="[35.0, 30.0, -30.0, 40.0, 45.0, -25.0, -40.0, -35.0]" solver:=qaoa
+
+The default is a 12-site mission spread over the 150 m map.
 """
 
 from launch import LaunchDescription
@@ -20,7 +22,9 @@ def generate_launch_description():
         ),
         DeclareLaunchArgument(
             "sites",
-            default_value="[10.0, 10.0, -12.0, 8.0, 15.0, -10.0, -8.0, -14.0]",
+            default_value="[35.0, 30.0, -30.0, 40.0, 45.0, -25.0, -40.0, -35.0, "
+                          "10.0, 55.0, -55.0, 5.0, 55.0, 10.0, 0.0, -50.0, "
+                          "20.0, -15.0, -15.0, 20.0, -20.0, -15.0, 25.0, 25.0]",
         ),
         DeclareLaunchArgument("solver", default_value="qaoa"),
         DeclareLaunchArgument("reps", default_value="1"),

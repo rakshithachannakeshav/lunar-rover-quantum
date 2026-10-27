@@ -46,7 +46,12 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src" / "planning_pkg"))
 
 from planning_pkg.cost_map import CostMapConfig, CostWeights  # noqa: E402
-from planning_pkg.mission_planner import build_instance, load_cost_map, sample_sites  # noqa: E402
+from planning_pkg.mission_planner import (  # noqa: E402
+    MAX_SITES,
+    build_instance,
+    load_cost_map,
+    sample_sites,
+)
 from planning_pkg.tsp_baselines import (  # noqa: E402
     best_of_random,
     brute_force,
@@ -72,7 +77,7 @@ TOL = 1e-9
 def parse_args(argv=None):
     p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
     p.add_argument("--n-min", type=int, default=4)
-    p.add_argument("--n-max", type=int, default=8)
+    p.add_argument("--n-max", type=int, default=12)
     p.add_argument("--seeds", type=int, nargs="+", default=[0, 1, 2, 3, 4])
     p.add_argument("--heightmap", default=str(ROOT / "src/rover_simulation/worlds/heightmap.png"))
     p.add_argument("--resolution", type=float, default=1.0)
@@ -440,8 +445,8 @@ def write_findings(df: pd.DataFrame, args, out: Path, wall_s: float) -> Path:
 
 def main(argv=None):
     args = parse_args(argv)
-    if not 1 <= args.n_min <= args.n_max <= 10:
-        raise SystemExit("--n-min/--n-max must satisfy 1 <= n_min <= n_max <= 10")
+    if not 1 <= args.n_min <= args.n_max <= MAX_SITES:
+        raise SystemExit(f"--n-min/--n-max must satisfy 1 <= n_min <= n_max <= {MAX_SITES}")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
