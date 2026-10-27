@@ -1,0 +1,62 @@
+<!--
+  Quantum / classical navigation on the Arjuna Edu Kit (ROS Melodic).
+
+  Start the kit's own bringup FIRST (LiDAR, BNO055, Arjuna_ticks_pub.py, odometry,
+  robot_pose_ekf, map_server), but NOT the kit's auto-nav node — two nodes publishing
+  /cmd_vel will fight. Then:
+
+    roslaunch arjuna_quantum_nav quantum_nav.launch algorithm:=auto
+    roslaunch arjuna_quantum_nav quantum_nav.launch algorithm:=astar max_linear:=0.10
+
+  Send a goal with RViz "2D Nav Goal", or pass goal_x:=1.0 goal_y:=0.0 to start at once.
+-->
+<launch>
+  <arg name="algorithm" default="auto"/>          <!-- auto | astar | dijkstra | qaoa -->
+  <arg name="max_linear" default="0.12"/>         <!-- m/s; start slow -->
+  <arg name="max_angular" default="0.6"/>         <!-- rad/s -->
+  <arg name="use_map" default="true"/>            <!-- false: open ground + live LiDAR -->
+  <arg name="robot_radius" default="0.2"/>        <!-- m, obstacle inflation -->
+  <arg name="laser_yaw_offset_deg" default="0.0"/> <!-- set 180 if lidar 0° faces backwards -->
+  <arg name="pitch_sign" default="1.0"/>          <!-- -1 if nose-up reads negative -->
+  <arg name="max_slope_deg" default="15.0"/>      <!-- planner refuses steeper slopes -->
+  <arg name="elevation_csv" default=""/>          <!-- optional height map (see README) -->
+  <arg name="elevation_resolution" default="0.1"/>
+  <arg name="elevation_origin_x" default="0.0"/>
+  <arg name="elevation_origin_y" default="0.0"/>
+  <arg name="goal_x" default=""/>
+  <arg name="goal_y" default=""/>
+
+  <node pkg="arjuna_quantum_nav" type="quantum_nav_node.py" name="quantum_nav" output="screen">
+    <param name="algorithm" value="$(arg algorithm)"/>
+    <param name="max_linear" value="$(arg max_linear)"/>
+    <param name="max_angular" value="$(arg max_angular)"/>
+    <param name="use_map" value="$(arg use_map)"/>
+    <param name="robot_radius" value="$(arg robot_radius)"/>
+    <param name="laser_yaw_offset_deg" value="$(arg laser_yaw_offset_deg)"/>
+    <param name="pitch_sign" value="$(arg pitch_sign)"/>
+    <param name="max_slope_deg" value="$(arg max_slope_deg)"/>
+    <param name="elevation_csv" value="$(arg elevation_csv)"/>
+    <param name="elevation_resolution" value="$(arg elevation_resolution)"/>
+    <param name="elevation_origin_x" value="$(arg elevation_origin_x)"/>
+    <param name="elevation_origin_y" value="$(arg elevation_origin_y)"/>
+    <param name="goal_x" value="$(arg goal_x)" if="$(eval arg('goal_x') != '')"/>
+    <param name="goal_y" value="$(arg goal_y)" if="$(eval arg('goal_y') != '')"/>
+
+    <!-- kit topics (from the Arjuna curriculum) -->
+    <param name="pose_topic" value="/robot_pose_ekf/odom_combined"/>
+    <param name="pose_type" value="pose_cov"/>
+    <param name="map_topic" value="/map"/>
+    <param name="scan_topic" value="/scan"/>
+    <param name="imu_topic" value="/imu/data"/>
+    <param name="sonar_topic" value="/distance"/>   <!-- HC-SR04 via rosserial, cm -->
+    <param name="goal_topic" value="/move_base_simple/goal"/>
+    <param name="cmd_vel_topic" value="/cmd_vel"/>
+
+    <!-- safety -->
+    <param name="lidar_stop_distance" value="0.25"/>
+    <param name="sonar_stop_cm" value="20.0"/>
+    <param name="max_tilt_deg" value="20.0"/>
+    <param name="pose_timeout" value="0.6"/>
+    <param name="replan_after" value="3.0"/>
+  </node>
+</launch>

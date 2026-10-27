@@ -1,0 +1,18 @@
+<?xml version="1.0"?>
+<package format="2">
+  <name>arjuna_quantum_nav</name>
+  <version>0.1.0</version>
+  <description>
+    Dijkstra / A* / QAOA path planning and path following for the Arjuna Edu Kit
+    (ROS Melodic, Jetson Nano). Port of the lunar-rover-quantum planners to real hardware.
+  </description>
+  <maintainer email="rakshithachannakeshav@gmail.com">Rakshitha Channakeshav</maintainer>
+  <license>MIT</license>
+
+  <buildtool_depend>catkin</buildtool_depend>
+  <exec_depend>rospy</exec_depend>
+  <exec_depend>std_msgs</exec_depend>
+  <exec_depend>geometry_msgs</exec_depend>
+  <exec_depend>nav_msgs</exec_depend>
+  <exec_depend>sensor_msgs</exec_depend>
+</package>
