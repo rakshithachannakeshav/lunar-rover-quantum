@@ -89,7 +89,7 @@ echo ""
 echo "=== PHASE E COMPLETE ==="
 
 echo "--- Configuring ~/.bashrc venv activation hint ---"
-BASHRC="/home/monis/.bashrc"
+BASHRC="${HOME}/.bashrc"
 VENV_COMMENT="# Lunar Rover Quantum: activate with: source ~/lunar-rover-quantum/.venv/bin/activate"
 if ! grep -Fq "lunar-rover-quantum" "$BASHRC"; then
     echo "$VENV_COMMENT" >> "$BASHRC"
