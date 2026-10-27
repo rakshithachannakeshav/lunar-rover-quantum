@@ -1,0 +1,45 @@
+{
+  "sources": [
+    "synthetic_clustered",
+    "terrain_clustered"
+  ],
+  "modes": [
+    "plain",
+    "windows"
+  ],
+  "ns": [
+    6,
+    8,
+    10,
+    12,
+    14
+  ],
+  "seeds": [
+    0,
+    1,
+    2,
+    3,
+    4
+  ],
+  "budget_frac": 0.5,
+  "ps": [
+    1,
+    2,
+    3
+  ],
+  "alphas": [
+    1.0,
+    0.5
+  ],
+  "shots": 4096,
+  "maxiter": 80,
+  "restarts": 1,
+  "heightmap": "/tmp/claude-0/-home-claude/fbebe3b6-4b9b-579b-81b0-bbd42ddf3602/scratchpad/work/src/rover_simulation/worlds/heightmap.png",
+  "w_uphill": 30.0,
+  "asym": 8.0,
+  "relief": 10.0,
+  "out": "/tmp/claude-0/-home-claude/fbebe3b6-4b9b-579b-81b0-bbd42ddf3602/scratchpad/orient_full",
+  "generated_at": "2026-10-21T17:54:04.409365",
+  "wall_time_s": 405.28655037,
+  "skipped_instances": 20
+}
