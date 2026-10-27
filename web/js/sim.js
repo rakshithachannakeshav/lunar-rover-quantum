@@ -7,9 +7,11 @@
   if (errEl) errEl.hidden = true;
 
   // ── constants ──────────────────────────────────────────────────────────────
-  var GOAL_X = 8, GOAL_Z = -4;
+  // spawn and goal sit ~48 m apart across the map
+  var START_X = -18, START_Z = 14;
+  var GOAL_X = 20, GOAL_Z = -16;
   var PATROL_WPS = [
-    [4, 0], [8, -4], [6, -8], [0, -6], [-4, -2], [0, 4], [4, 0]
+    [10, 0], [20, -10], [15, -20], [0, -15], [-10, -5], [0, 10], [10, 0]
   ];
 
   // ── obstacle registry (rocks with collision radii) ─────────────────────────
@@ -25,7 +27,7 @@
 
   // rover 2D world coords (x, z in THREE space)
   var rv = {
-    wx: -3, wz: 3,         // world X and Z
+    wx: START_X, wz: START_Z,  // world X and Z
     wy: 0,                  // smoothed Y (visual only)
     yaw: 0,
     speed: 0,               // forward speed m/s
@@ -102,7 +104,6 @@
   // ── terrain profiles ───────────────────────────────────────────────────────
   // Each profile places uphill/downhill features on the spawn→goal route so the
   // planners have to trade distance against climbing.
-  var START_X = -3, START_Z = 3;
   var MID_X = (START_X + GOAL_X) / 2, MID_Z = (START_Z + GOAL_Z) / 2;
   // unit vector along the spawn→goal axis, and its perpendicular
   var AX_LEN = Math.sqrt((GOAL_X - START_X) * (GOAL_X - START_X) + (GOAL_Z - START_Z) * (GOAL_Z - START_Z));
@@ -111,11 +112,16 @@
   var TERRAINS = {
     flat:    { label: "Flat",    desc: "Gentle undulation only — the baseline." },
     rolling: { label: "Rolling", desc: "Several hills and dips scattered across the route." },
-    hill:    { label: "Hill",    desc: "A 1.8 m hill on the straight line — climb it or drive around?" },
-    crater:  { label: "Crater",  desc: "A 1 m deep bowl on the direct route — downhill in, uphill out." },
+    hill:    { label: "Hill",    desc: "A 2.6 m hill on the straight line — climb it or drive around?" },
+    crater:  { label: "Crater",  desc: "A 1.5 m deep bowl on the direct route — downhill in, uphill out." },
     ridge:   { label: "Ridge",   desc: "A 2.5 m ridge too steep to cross, except at one saddle pass." }
   };
   var terrainId = "flat";
+
+  var ROLLING_BUMPS = [
+    [0.15, 3, 1.0, 2.6], [0.28, -4, -0.8, 3.0], [0.40, 1, 1.2, 3.2], [0.52, 5, -0.9, 2.8],
+    [0.63, -3, 1.1, 3.0], [0.75, 4, 1.0, 2.6], [0.87, -2, -0.8, 2.8]
+  ];
 
   function gauss(x, z, cx, cz, amp, sigma) {
     var dx = x - cx, dz = z - cz;
@@ -135,22 +141,23 @@
     if (cd < 7) h -= 0.9 * Math.pow(Math.max(0, 1 - cd / 7), 2);
 
     if (terrainId === "rolling") {
-      h += gauss(x, z, -1, -1, 1.1, 2.2);
-      h += gauss(x, z, 5, 2, 0.9, 2.0);
-      h -= gauss(x, z, 2, -4, 0.8, 2.2);
-      h += gauss(x, z, 7, -7, 1.0, 2.4);
-      h -= gauss(x, z, -4, -6, 0.7, 2.5);
+      // [fraction along the route, sideways offset (m), amplitude (m), sigma (m)]
+      for (var b = 0; b < ROLLING_BUMPS.length; b++) {
+        var bp = ROLLING_BUMPS[b];
+        h += gauss(x, z, START_X + bp[0] * (GOAL_X - START_X) + bp[1] * AX_Z,
+                   START_Z + bp[0] * (GOAL_Z - START_Z) - bp[1] * AX_X, bp[2], bp[3]);
+      }
     } else if (terrainId === "hill") {
-      h += gauss(x, z, MID_X, MID_Z, 1.8, 2.6);
+      h += gauss(x, z, MID_X, MID_Z, 2.6, 4.0);
     } else if (terrainId === "crater") {
       var r = Math.sqrt((x - MID_X) * (x - MID_X) + (z - MID_Z) * (z - MID_Z));
-      var R = 4.5;
-      if (r < R) { var u = r / R; h -= 1.0 * (1 - u * u) * (1 - u * u); }
+      var R = 7.0;
+      if (r < R) { var u = r / R; h -= 1.5 * (1 - u * u) * (1 - u * u); }
       h += 0.35 * Math.exp(-(r - R) * (r - R) / (2 * 0.9 * 0.9));   // raised rim
     } else if (terrainId === "ridge") {
       var along = (x - MID_X) * AX_X + (z - MID_Z) * AX_Z;    // across the ridge
       var lateral = (x - MID_X) * AX_Z - (z - MID_Z) * AX_X;  // along the ridge crest
-      var saddle = 1 - 0.85 * Math.exp(-(lateral + 5) * (lateral + 5) / (2 * 2.0 * 2.0));
+      var saddle = 1 - 0.85 * Math.exp(-(lateral + 9) * (lateral + 9) / (2 * 2.0 * 2.0));
       h += 2.5 * Math.exp(-along * along / (2 * 1.6 * 1.6)) * saddle;
     }
     return h;
@@ -258,7 +265,13 @@
     [3, 1, 1.8, 0.9, 1.4], [-2, 4, 1.2, 0.8, 1.1], [6, -2, 2.2, 1.1, 1.9],
     [-5, -3, 1.5, 1.0, 1.3], [9, 5, 1.1, 0.7, 1.0], [-8, 7, 2.0, 1.3, 1.8],
     [4, -7, 1.3, 0.9, 1.2], [-3, -8, 1.6, 1.1, 1.4], [7, 2, 1.0, 0.8, 1.1],
-    [-6, 2, 1.4, 0.7, 1.2], [2, 8, 1.8, 1.0, 1.5], [-9, -5, 1.2, 0.6, 1.0]
+    [-6, 2, 1.4, 0.7, 1.2], [2, 8, 1.8, 1.0, 1.5], [-9, -5, 1.2, 0.6, 1.0],
+    // outer field along the long spawn -> goal crossing
+    [-14, 10, 1.6, 1.0, 1.4], [-10, 13, 1.3, 0.8, 1.2], [-12, 4, 2.0, 1.2, 1.7],
+    [-16, -2, 1.4, 0.9, 1.3], [-20, 6, 1.5, 0.9, 1.3], [-4, 12, 1.3, 0.8, 1.2],
+    [12, -8, 1.7, 1.0, 1.5], [15, -13, 1.2, 0.8, 1.1], [17, -20, 1.9, 1.1, 1.6],
+    [10, -16, 1.4, 0.9, 1.2], [14, -2, 1.5, 1.0, 1.3], [5, -12, 1.6, 1.0, 1.4],
+    [20, -8, 1.1, 0.7, 1.0], [22, -24, 1.3, 0.8, 1.1]
   ];
   rockDefs.forEach(function (r) { addRock(r[0], r[1], r[2], r[3], r[4]); });
 
@@ -294,8 +307,8 @@
   // ── A* pathfinding on a 2D grid ───────────────────────────────────────────
   // Grid-based A* that respects obstacle positions for the web sim
   var GRID_RES = 0.5;       // meters per cell
-  var GRID_MIN = -15;
-  var GRID_MAX = 15;
+  var GRID_MIN = -30;
+  var GRID_MAX = 30;
 
   function worldToGrid(wx, wz) {
     return {
@@ -324,6 +337,41 @@
   }
 
   function gridKey(gx, gz) { return gx + "," + gz; }
+
+  // binary min-heap of grid keys for the open sets; stale entries (already
+  // closed, or superseded by a cheaper push) are skipped when popped
+  function MinHeap() { this.keys = []; this.pri = []; }
+  MinHeap.prototype.push = function (key, p) {
+    var k = this.keys, q = this.pri, i = k.length;
+    k.push(key); q.push(p);
+    while (i > 0) {
+      var up = (i - 1) >> 1;
+      if (q[up] <= p) break;
+      k[i] = k[up]; q[i] = q[up]; i = up;
+    }
+    k[i] = key; q[i] = p;
+  };
+  MinHeap.prototype.pop = function () {
+    var k = this.keys, q = this.pri;
+    if (!k.length) return null;
+    var top = k[0], lastK = k.pop(), lastP = q.pop(), n = k.length, i = 0;
+    if (n) {
+      while (true) {
+        var c = 2 * i + 1;
+        if (c >= n) break;
+        if (c + 1 < n && q[c + 1] < q[c]) c++;
+        if (q[c] >= lastP) break;
+        k[i] = k[c]; q[i] = q[c]; i = c;
+      }
+      k[i] = lastK; q[i] = lastP;
+    }
+    return top;
+  };
+  function popOpen(heap, open) {
+    var key;
+    while ((key = heap.pop()) !== null) if (open[key]) return key;
+    return null;
+  }
 
   // A* with terrain slope cost (energy-aware, matching the classical_planning.py approach)
   function astarPath(startX, startZ, goalX, goalZ) {
@@ -355,6 +403,7 @@
     ];
 
     var open = {};   // key -> { gx, gz, f, g, parent }
+    var heap = new MinHeap();
     var closed = {};
     var startKey = gridKey(s.gx, s.gz);
     var goalKey = gridKey(g.gx, g.gz);
@@ -367,15 +416,14 @@
 
     open[startKey] = { gx: s.gx, gz: s.gz, f: heuristic(s.gx, s.gz), g: 0, parent: null };
 
+    heap.push(startKey, open[startKey].f);
+
     var iterations = 0;
-    var maxIter = 8000;
+    var maxIter = gridSize * gridSize;
 
     while (true) {
       // find lowest f in open
-      var bestKey = null, bestF = Infinity;
-      for (var k in open) {
-        if (open[k].f < bestF) { bestF = open[k].f; bestKey = k; }
-      }
+      var bestKey = popOpen(heap, open);
       if (bestKey === null || iterations++ > maxIter) return null;  // no path
 
       var current = open[bestKey];
@@ -420,6 +468,8 @@
           g: tentG,
           parent: current
         };
+
+        heap.push(nk, open[nk].f);
       }
     }
   }
@@ -455,19 +505,19 @@
 
     var open = {};
     var closed = {};
+    var heap = new MinHeap();
     var startKey = gridKey(s.gx, s.gz);
     var goalKey = gridKey(g.gx, g.gz);
 
     open[startKey] = { gx: s.gx, gz: s.gz, f: 0, g: 0, parent: null };
 
+    heap.push(startKey, open[startKey].f);
+
     var iterations = 0;
-    var maxIter = 12000;
+    var maxIter = gridSize * gridSize;
 
     while (true) {
-      var bestKey = null, bestF = Infinity;
-      for (var k in open) {
-        if (open[k].g < bestF) { bestF = open[k].g; bestKey = k; }
-      }
+      var bestKey = popOpen(heap, open);
       if (bestKey === null || iterations++ > maxIter) return null;
 
       var current = open[bestKey];
@@ -511,6 +561,8 @@
           g: tentG,
           parent: current
         };
+
+        heap.push(nk, open[nk].f);
       }
     }
   }
@@ -553,7 +605,7 @@
     }
 
     var dirs = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-    var open = {}, closed = {};
+    var open = {}, closed = {}, heap = new MinHeap();
     var startKey = gridKey(s.gx, s.gz);
     var goalKey = gridKey(g.gx, g.gz);
 
@@ -568,11 +620,12 @@
     }
 
     open[startKey] = { gx: s.gx, gz: s.gz, f: heuristic(s.gx, s.gz), g: 0, parent: null };
-    var iterations = 0, maxIter = 8000;
+
+    heap.push(startKey, open[startKey].f);
+    var iterations = 0, maxIter = gridSize * gridSize;
 
     while (true) {
-      var bestKey = null, bestF = Infinity;
-      for (var k in open) { if (open[k].f < bestF) { bestF = open[k].f; bestKey = k; } }
+      var bestKey = popOpen(heap, open);
       if (bestKey === null || iterations++ > maxIter) return null;
 
       var current = open[bestKey];
@@ -602,6 +655,7 @@
         var tentG = current.g + moveCost;
         if (open[nk] && open[nk].g <= tentG) continue;
         open[nk] = { gx: ngx, gz: ngz, f: tentG + heuristic(ngx, ngz), g: tentG, parent: current };
+        heap.push(nk, open[nk].f);
       }
     }
   }
@@ -876,6 +930,13 @@
   );
   flagPole.position.y = 1.0;
   goalGroup.add(flagPole);
+  // tall translucent beacon so the far-away goal is visible from the spawn
+  var beacon = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.15, 14, 12, 1, true),
+    new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.25, depthWrite: false })
+  );
+  beacon.position.y = 7;
+  goalGroup.add(beacon);
   var flag = new THREE.Mesh(
     new THREE.PlaneGeometry(0.6, 0.35),
     new THREE.MeshStandardMaterial({ color: 0xff6600, side: THREE.DoubleSide, emissive: 0xff3300, emissiveIntensity: 0.3 })
@@ -1410,7 +1471,11 @@
     }, 30);
   });
 
-  window.roverSim = { setTerrain: setTerrain, benchmarkTerrains: benchmarkTerrains, runPlanners: runPlanners };
+  window.roverSim = {
+    setTerrain: setTerrain, benchmarkTerrains: benchmarkTerrains, runPlanners: runPlanners,
+    start: [START_X, START_Z], goal: [GOAL_X, GOAL_Z], extent: GRID_MAX,
+    rover: function () { return [rv.wx, rv.wz]; }
+  };
 
   document.querySelectorAll(".cam-btn[data-cam]").forEach(function (btn) {
     btn.addEventListener("click", function () {

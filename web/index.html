@@ -386,12 +386,24 @@
       ctx.lineWidth = 0.5;
       for (var g = 0; g < W; g += 22) { ctx.beginPath(); ctx.moveTo(g, 0); ctx.lineTo(g, H); ctx.stroke(); }
       for (var g2 = 0; g2 < H; g2 += 22) { ctx.beginPath(); ctx.moveTo(0, g2); ctx.lineTo(W, g2); ctx.stroke(); }
-      // goal
-      var gx = W / 2 + 8 * scale, gz = H / 2 + (-4) * scale;
-      ctx.fillStyle = "#ff6600";
-      ctx.beginPath(); ctx.arc(gx, gz, 5, 0, Math.PI * 2); ctx.fill();
-      ctx.fillStyle = "rgba(255,102,0,0.2)";
-      ctx.beginPath(); ctx.arc(gx, gz, 12, 0, Math.PI * 2); ctx.fill();
+      var sim = window.roverSim;
+      if (sim) {
+        scale = (W / 2 - 6) / sim.extent;  // fit the whole planning grid
+        // start
+        var sx = W / 2 + sim.start[0] * scale, sz = H / 2 + sim.start[1] * scale;
+        ctx.strokeStyle = "rgba(120,200,255,0.8)";
+        ctx.beginPath(); ctx.arc(sx, sz, 4, 0, Math.PI * 2); ctx.stroke();
+        // goal
+        var gx = W / 2 + sim.goal[0] * scale, gz = H / 2 + sim.goal[1] * scale;
+        ctx.fillStyle = "#ff6600";
+        ctx.beginPath(); ctx.arc(gx, gz, 5, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "rgba(255,102,0,0.2)";
+        ctx.beginPath(); ctx.arc(gx, gz, 12, 0, Math.PI * 2); ctx.fill();
+        // rover
+        var r = sim.rover();
+        ctx.fillStyle = "#7fffd4";
+        ctx.beginPath(); ctx.arc(W / 2 + r[0] * scale, H / 2 + r[1] * scale, 3, 0, Math.PI * 2); ctx.fill();
+      }
       requestAnimationFrame(drawMinimap);
     }
     drawMinimap();
