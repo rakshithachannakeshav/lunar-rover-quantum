@@ -98,6 +98,13 @@ def test_too_many_or_duplicate_sites_raise(terrain):
         solve_order(np.zeros((3, 3)), solver="magic")
 
 
+def test_cli_accepts_negative_site_coordinates():
+    from planning_pkg.mission_planner import _parse_xy, _protect_negative_xy
+    argv = _protect_negative_xy(["--sites", "35,30", "-30,40", "0,-50", "-1.5,-2", "--open"])
+    assert argv == ["--sites", "35,30", " -30,40", "0,-50", " -1.5,-2", "--open"]
+    assert [_parse_xy(a) for a in argv[1:5]] == [(35, 30), (-30, 40), (0, -50), (-1.5, -2)]
+
+
 def test_save_mission_plan(terrain, tmp_path):
     cm, G = terrain
     plan = plan_mission(G, cm, (0.0, 0.0), sample_sites(G, 3, seed=3, min_separation_m=6.0),

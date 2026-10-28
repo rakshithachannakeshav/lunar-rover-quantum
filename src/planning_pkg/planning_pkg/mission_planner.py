@@ -23,6 +23,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
+import sys
 import time
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
@@ -229,6 +231,15 @@ def _parse_xy(text: str) -> Tuple[float, float]:
     return float(x), float(y)
 
 
+_XY = re.compile(r"^-[\d.]+,-?[\d.]+$")
+
+
+def _protect_negative_xy(argv: Sequence[str]) -> List[str]:
+    """argparse reads a pair like "-30,40" as an unknown option; a leading
+    space keeps it positional (float() ignores the space)."""
+    return [" " + a if _XY.match(a) else a for a in argv]
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Plan a multi-site sample-collection mission.")
     parser.add_argument("--heightmap", default="src/rover_simulation/worlds/heightmap.png")
@@ -249,7 +260,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--window", type=int, default=3)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--out", default="results/missions")
-    args = parser.parse_args(argv)
+    args = parser.parse_args(_protect_negative_xy(sys.argv[1:] if argv is None else argv))
 
     config = CostMapConfig(resolution_m=args.resolution,
                            weights=CostWeights(args.w_dist, args.w_slope, args.w_shadow,
