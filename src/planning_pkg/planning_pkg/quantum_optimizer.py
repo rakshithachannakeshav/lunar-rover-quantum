@@ -36,13 +36,7 @@ import networkx as nx
 import numpy as np
 from scipy.optimize import minimize
 
-from planning_pkg.classical_planning import (
-    PlanResult,
-    load_weighted_graph,
-    resolve_node,
-    run_astar,
-)
-from planning_pkg.graph_model import load_graph
+from planning_pkg.graph_model import load_graph, resolve_node
 
 
 EdgeId = Tuple[Any, Any, int]
@@ -811,55 +805,24 @@ def run_qaoa(
     )
 
 
-def compare_quantum_classical(
-    classical: PlanResult,
-    quantum: QuantumPlanResult,
-) -> Dict[str, Any]:
-    return {
-        "energy_delta": quantum.total_energy - classical.total_energy,
-        "abs_energy_delta": abs(quantum.total_energy - classical.total_energy),
-        "distance_delta_m": quantum.total_distance_m - classical.total_distance_m,
-        "runtime_delta_ms": quantum.runtime_ms - classical.runtime_ms,
-        "energy_ratio": (
-            quantum.total_energy / classical.total_energy
-            if classical.total_energy > 0 else None
-        ),
-        "paths_identical": quantum.path_nodes == classical.path_nodes,
-        "quantum": {
-            "energy": quantum.total_energy,
-            "distance_m": quantum.total_distance_m,
-            "waypoints": quantum.num_waypoints,
-            "runtime_ms": quantum.runtime_ms,
-            "qubits": quantum.qubits,
-            "reduced_edges": quantum.reduced_edges,
-            "shots": quantum.shots,
-            "reps": quantum.reps,
-            "valid_samples": quantum.valid_samples,
-            "device": quantum.device,
-        },
-        "classical": {
-            "algorithm": classical.algorithm,
-            "energy": classical.total_energy,
-            "distance_m": classical.total_distance_m,
-            "waypoints": classical.num_waypoints,
-            "runtime_ms": classical.runtime_ms,
-        },
-        "compared_at": datetime.now().isoformat(),
-    }
-
-
 def save_quantum_results(
     quantum: QuantumPlanResult,
-    comparison: Dict[str, Any],
     out_dir: str | Path = "results/paths",
+    comparison: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, str]:
+    """Write latest_quantum.json plus a timestamped copy.
+
+    `comparison` is optional and only supplied by planning_pkg.compare_planners;
+    the QAOA run itself never produces or needs a classical baseline.
+    """
     out = Path(out_dir)
     out.mkdir(parents=True, exist_ok=True)
-    data = {
+    data: Dict[str, Any] = {
         "quantum": quantum.to_dict(),
-        "comparison": comparison,
         "saved_at": datetime.now().isoformat(),
     }
+    if comparison is not None:
+        data["comparison"] = comparison
     latest = out / "latest_quantum.json"
     with latest.open("w", encoding="utf-8") as handle:
         json.dump(data, handle, indent=2)
@@ -901,7 +864,9 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     print(f"[quantum_optimizer] Loading graph: {args.graph}")
     try:
-        graph = load_weighted_graph(args.graph)
+        if not os.path.exists(args.graph):
+            raise FileNotFoundError(f"Weighted graph file not found at: {args.graph}")
+        graph = load_graph(args.graph)
         start = resolve_node(graph, args.start_x, args.start_y)
         goal = resolve_node(graph, args.goal_x, args.goal_y)
         quantum = run_qaoa(
@@ -915,19 +880,12 @@ def main(argv: Optional[List[str]] = None) -> int:
             penalty=args.penalty,
             device=args.device,
         )
-        # A* runs only afterwards, as an independent reference for the report.
-        classical = run_astar(graph, start, goal)
     except Exception as exc:
         print(f"[quantum_optimizer] ERROR: {exc}")
         return 1
 
-    comparison = compare_quantum_classical(classical, quantum)
-    saved = save_quantum_results(quantum, comparison, args.out)
+    saved = save_quantum_results(quantum, args.out)
 
-    print(
-        f"[quantum_optimizer] A*: {classical.total_energy:.4f} energy / "
-        f"{classical.num_waypoints} waypoints"
-    )
     print(
         f"[quantum_optimizer] QAOA: {quantum.total_energy:.4f} energy / "
         f"{quantum.num_waypoints} waypoints / {quantum.qubits} qubits / "

@@ -8,6 +8,7 @@ because CI environments may not have a quantum simulator installed.
 
 import math
 import os
+import subprocess
 import sys
 
 import networkx as nx
@@ -17,12 +18,10 @@ PKG_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "src", "
 if PKG_DIR not in sys.path:
     sys.path.insert(0, PKG_DIR)
 
-from planning_pkg.classical_planning import run_astar
 from planning_pkg.quantum_optimizer import (
     _lattice_shape,
     build_quantum_corridor,
     build_qubo,
-    compare_quantum_classical,
     qubo_to_ising,
 )
 
@@ -81,7 +80,6 @@ def test_lattice_corridor_on_large_grid_uses_no_classical_planner(monkeypatch):
     def forbidden(*args, **kwargs):
         raise AssertionError("corridor must not call a classical planner")
 
-    monkeypatch.setattr(qo, "run_astar", forbidden)
     monkeypatch.setattr(nx, "shortest_simple_paths", forbidden)
     monkeypatch.setattr(nx, "shortest_path", forbidden)
     monkeypatch.setattr(nx, "dijkstra_path", forbidden)
@@ -140,35 +138,15 @@ def test_ising_conversion_is_finite(graph):
     assert all(math.isfinite(v) for v in zz.values())
 
 
-def test_classical_comparison_schema(graph):
-    baseline = run_astar(graph, "A", "D")
-    # Minimal stand-in object for the comparison helper.
-    from planning_pkg.quantum_optimizer import QuantumPlanResult
-    quantum = QuantumPlanResult(
-        algorithm="QAOA",
-        path_nodes=baseline.path_nodes,
-        path_coords=baseline.path_coords,
-        total_energy=baseline.total_energy,
-        total_distance_m=baseline.total_distance_m,
-        num_waypoints=baseline.num_waypoints,
-        runtime_ms=12.0,
-        timestamp="2026-09-15T00:00:00",
-        best_bitstring="0000",
-        qaoa_expectation=3.0,
-        reduced_nodes=4,
-        reduced_edges=3,
-        qubits=5,
-        shots=128,
-        reps=1,
-        penalty=10.0,
-        valid_samples=64,
-        sampled_candidates=128,
+def test_quantum_optimizer_does_not_import_classical_planner():
+    """QAOA must be independent of A*/Dijkstra: importing it never loads them."""
+    code = (
+        "import sys; sys.path.insert(0, sys.argv[1]);"
+        "import planning_pkg.quantum_optimizer as qo;"
+        "assert 'planning_pkg.classical_planning' not in sys.modules;"
+        "assert not hasattr(qo, 'run_astar') and not hasattr(qo, 'run_dijkstra')"
     )
-    result = compare_quantum_classical(baseline, quantum)
-    assert result["paths_identical"] is True
-    assert result["energy_delta"] == 0.0
-    assert "quantum" in result
-    assert "classical" in result
+    subprocess.run([sys.executable, "-c", code, PKG_DIR], check=True)
 
 
 def test_aer_expectation_matches_exact_qubo_cost(graph):
