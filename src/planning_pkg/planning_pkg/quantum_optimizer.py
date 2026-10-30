@@ -92,6 +92,7 @@ class QuantumPlanResult:
     penalty: float
     valid_samples: int
     sampled_candidates: int
+    device: str = "CPU"
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -419,38 +420,59 @@ def qubo_to_ising(qubo: QuboModel) -> Tuple[Dict[int, float], Dict[Tuple[int, in
 def _require_qiskit():
     try:
         from qiskit import QuantumCircuit, transpile
+        from qiskit.circuit import ParameterVector
+        from qiskit.quantum_info import SparsePauliOp
         from qiskit_aer import AerSimulator
-        from qiskit.quantum_info import Statevector
     except ImportError as exc:
         raise RuntimeError(
             "Phase 8 requires qiskit and qiskit-aer. "
-            "Install with: pip install -r requirements.txt"
+            "Install with: pip install -r requirements.txt "
+            "(qiskit-aer-gpu instead of qiskit-aer for GPU runs)"
         ) from exc
-    return QuantumCircuit, transpile, AerSimulator, Statevector
+    return QuantumCircuit, transpile, AerSimulator, ParameterVector, SparsePauliOp
+
+
+def resolve_device(device: str = "auto") -> str:
+    """Map 'auto' / 'CPU' / 'GPU' to an Aer device that is actually available."""
+    _, _, AerSimulator, _, _ = _require_qiskit()
+    available = tuple(AerSimulator().available_devices())
+    wanted = device.upper()
+    if wanted == "AUTO":
+        return "GPU" if "GPU" in available else "CPU"
+    if wanted not in available:
+        raise RuntimeError(
+            f"Aer device {wanted!r} is not available (available: {available}). "
+            "For GPU runs install qiskit-aer-gpu and check the CUDA driver."
+        )
+    return wanted
+
+
+def _aer_backend(device: str):
+    _, _, AerSimulator, _, _ = _require_qiskit()
+    return AerSimulator(method="statevector", device=device)
 
 
 def _qaoa_circuit(
     num_qubits: int,
     h: Mapping[int, float],
     zz: Mapping[Tuple[int, int], float],
-    gammas: Sequence[float],
-    betas: Sequence[float],
+    gammas: Sequence[Any],
+    betas: Sequence[Any],
     measure: bool = False,
 ):
-    QuantumCircuit, _, _, _ = _require_qiskit()
+    """QAOA ansatz; gammas/betas may be floats or circuit Parameters."""
+    QuantumCircuit, _, _, _, _ = _require_qiskit()
     qc = QuantumCircuit(num_qubits)
     qc.h(range(num_qubits))
 
     for gamma, beta in zip(gammas, betas):
         # exp(-i*gamma*h_i*Z_i)
         for i, coeff in h.items():
-            qc.rz(2.0 * gamma * coeff, i)
+            qc.rz(2.0 * coeff * gamma, i)
 
         # exp(-i*gamma*J_ij*Z_i Z_j)
         for (i, j), coeff in zz.items():
-            qc.cx(i, j)
-            qc.rz(2.0 * gamma * coeff, j)
-            qc.cx(i, j)
+            qc.rzz(2.0 * coeff * gamma, i, j)
 
         # exp(-i*beta*X_i)
         for i in range(num_qubits):
@@ -461,23 +483,19 @@ def _qaoa_circuit(
     return qc
 
 
-def _statevector_expectation(
-    qubo: QuboModel,
-    gammas: Sequence[float],
-    betas: Sequence[float],
-    cost_values: np.ndarray,
-) -> float:
-    _, _, _, Statevector = _require_qiskit()
-    qc = _qaoa_circuit(
-        qubo.num_variables,
-        *qubo_to_ising(qubo),
-        gammas,
-        betas,
-        measure=False,
+def _ising_operator(qubo: QuboModel):
+    """QUBO cost as a diagonal Pauli operator: offset + sum h Z + sum J ZZ."""
+    _, _, _, _, SparsePauliOp = _require_qiskit()
+    h, zz = qubo_to_ising(qubo)
+    offset = (
+        qubo.constant
+        + 0.5 * sum(qubo.linear.values())
+        + 0.25 * sum(qubo.quadratic.values())
     )
-    state = np.asarray(Statevector.from_instruction(qc).data)
-    probs = np.abs(state) ** 2
-    return float(np.dot(probs, cost_values))
+    terms = [("", [], offset)]
+    terms += [("Z", [i], c) for i, c in h.items()]
+    terms += [("ZZ", [i, j], c) for (i, j), c in zz.items()]
+    return SparsePauliOp.from_sparse_list(terms, num_qubits=qubo.num_variables).simplify()
 
 
 def _cost_lookup(qubo: QuboModel) -> np.ndarray:
@@ -500,24 +518,33 @@ def optimize_qaoa(
     reps: int = 1,
     restarts: int = 4,
     seed: int = 7,
+    device: str = "auto",
 ) -> Tuple[np.ndarray, float]:
-    """Optimize QAOA angles against the exact statevector expectation."""
+    """Optimize QAOA angles against the exact Aer statevector expectation.
+
+    The expectation <C> is evaluated inside Aer (on the GPU when device is GPU),
+    so only one number per evaluation leaves the simulator. Memory is the only
+    limit on qubits: a double-precision statevector needs 16 * 2^n bytes.
+    """
     if reps < 1:
         raise ValueError("reps must be >= 1.")
-    if qubo.num_variables > 22:
-        raise ValueError(
-            f"QAOA demo is limited to 22 qubits; got {qubo.num_variables}. "
-            "Reduce --max-edges."
-        )
 
+    _, transpile, _, ParameterVector, _ = _require_qiskit()
+    backend = _aer_backend(resolve_device(device))
     rng = np.random.default_rng(seed)
-    cost_values = _cost_lookup(qubo)
-    h, zz = qubo_to_ising(qubo)
 
-    def objective(params: np.ndarray) -> float:
-        gammas = params[:reps]
-        betas = params[reps:]
-        return _statevector_expectation(qubo, gammas, betas, cost_values)
+    gamma_p = ParameterVector("gamma", reps)
+    beta_p = ParameterVector("beta", reps)
+    h, zz = qubo_to_ising(qubo)
+    qc = _qaoa_circuit(qubo.num_variables, h, zz, list(gamma_p), list(beta_p))
+    qc.save_expectation_value(_ising_operator(qubo), list(range(qubo.num_variables)))
+    compiled = transpile(qc, backend)
+    params = list(gamma_p) + list(beta_p)
+
+    def objective(values: np.ndarray) -> float:
+        bound = compiled.assign_parameters(dict(zip(params, values)))
+        result = backend.run(bound).result()
+        return float(np.real(result.data(0)["expectation_value"]))
 
     best_x: Optional[np.ndarray] = None
     best_value = math.inf
@@ -685,9 +712,11 @@ def run_qaoa(
     restarts: int = 4,
     seed: int = 7,
     penalty: Optional[float] = None,
+    device: str = "auto",
 ) -> QuantumPlanResult:
     """Build the reduced QUBO, run QAOA on AerSimulator, and decode the best path."""
-    QuantumCircuit, transpile, AerSimulator, _ = _require_qiskit()
+    _, transpile, _, _, _ = _require_qiskit()
+    device = resolve_device(device)
     if shots < 1:
         raise ValueError("shots must be >= 1.")
 
@@ -697,7 +726,7 @@ def run_qaoa(
     )
     qubo = build_qubo(reduced, start, goal, penalty=penalty)
     params, expectation = optimize_qaoa(
-        qubo, reps=reps, restarts=restarts, seed=seed
+        qubo, reps=reps, restarts=restarts, seed=seed, device=device
     )
     gammas = params[:reps]
     betas = params[reps:]
@@ -709,7 +738,7 @@ def run_qaoa(
         betas,
         measure=True,
     )
-    backend = AerSimulator()
+    backend = _aer_backend(device)
     compiled = transpile(qc, backend)
     result = backend.run(compiled, shots=shots, seed_simulator=seed).result()
     counts = result.get_counts(compiled)
@@ -778,6 +807,7 @@ def run_qaoa(
         penalty=qubo.penalty,
         valid_samples=valid_samples,
         sampled_candidates=sampled_candidates,
+        device=device,
     )
 
 
@@ -805,6 +835,7 @@ def compare_quantum_classical(
             "shots": quantum.shots,
             "reps": quantum.reps,
             "valid_samples": quantum.valid_samples,
+            "device": quantum.device,
         },
         "classical": {
             "algorithm": classical.algorithm,
@@ -862,6 +893,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--restarts", type=int, default=4)
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--penalty", type=float, default=None)
+    parser.add_argument(
+        "--device", default="auto", choices=["auto", "CPU", "GPU"],
+        help="Aer simulator device; auto picks GPU when qiskit-aer-gpu sees one.",
+    )
     args = parser.parse_args(argv)
 
     print(f"[quantum_optimizer] Loading graph: {args.graph}")
@@ -878,6 +913,7 @@ def main(argv: Optional[List[str]] = None) -> int:
             restarts=args.restarts,
             seed=args.seed,
             penalty=args.penalty,
+            device=args.device,
         )
         # A* runs only afterwards, as an independent reference for the report.
         classical = run_astar(graph, start, goal)
@@ -895,7 +931,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(
         f"[quantum_optimizer] QAOA: {quantum.total_energy:.4f} energy / "
         f"{quantum.num_waypoints} waypoints / {quantum.qubits} qubits / "
-        f"{quantum.runtime_ms:.2f} ms"
+        f"{quantum.runtime_ms:.2f} ms on {quantum.device}"
     )
     print(
         f"[quantum_optimizer] reduced graph: {quantum.reduced_nodes} nodes, "

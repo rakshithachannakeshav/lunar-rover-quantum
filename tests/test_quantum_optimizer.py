@@ -169,3 +169,42 @@ def test_classical_comparison_schema(graph):
     assert result["energy_delta"] == 0.0
     assert "quantum" in result
     assert "classical" in result
+
+
+def test_aer_expectation_matches_exact_qubo_cost(graph):
+    """The Aer-side <C> must equal sum_x p(x) * QUBO(x) over all basis states."""
+    pytest.importorskip("qiskit_aer")
+    import numpy as np
+    from qiskit import transpile
+    from qiskit_aer import AerSimulator
+
+    from planning_pkg.quantum_optimizer import _cost_lookup, _ising_operator, _qaoa_circuit
+
+    reduced = build_quantum_corridor(graph, "A", "D", max_edges=8)
+    qubo = build_qubo(reduced, "A", "D")
+    n = qubo.num_variables
+    h, zz = qubo_to_ising(qubo)
+
+    qc = _qaoa_circuit(n, h, zz, [0.4, 1.1], [0.3, 0.8])
+    qc.save_statevector()
+    qc.save_expectation_value(_ising_operator(qubo), list(range(n)))
+    backend = AerSimulator(method="statevector")
+    data = backend.run(transpile(qc, backend)).result().data(0)
+
+    probs = np.abs(np.asarray(data["statevector"])) ** 2
+    exact = float(np.dot(probs, _cost_lookup(qubo)))
+    assert float(np.real(data["expectation_value"])) == pytest.approx(exact, rel=1e-9)
+
+
+def test_resolve_device_auto_and_rejects_missing():
+    pytest.importorskip("qiskit_aer")
+    from qiskit_aer import AerSimulator
+
+    from planning_pkg.quantum_optimizer import resolve_device
+
+    available = AerSimulator().available_devices()
+    assert resolve_device("auto") in available
+    assert resolve_device("cpu") == "CPU"
+    if "GPU" not in available:
+        with pytest.raises(RuntimeError, match="qiskit-aer-gpu"):
+            resolve_device("GPU")

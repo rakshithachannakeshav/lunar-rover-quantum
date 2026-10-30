@@ -274,6 +274,11 @@ PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning \
 PYTHONPATH=src/planning_pkg python3 -m planning_pkg.quantum_optimizer \
   --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5 \
   --graph results/graphs/latest.graphml --max-edges 12 --shots 2048
+# QAOA runs on Aer; --device auto (default) uses a GPU when qiskit-aer-gpu
+# finds one, or force --device GPU / CPU. There is no qubit cap: a statevector
+# needs 16 * 2^qubits bytes, so --max-edges is limited only by device memory.
+#   pip uninstall qiskit-aer && pip install qiskit-aer-gpu
+
 
 # Compare planners + distance-only baseline over 200 random routes
 #   -> results/energy_comparison/latest_comparison.json

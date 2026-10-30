@@ -23,6 +23,7 @@ def generate_launch_description():
         DeclareLaunchArgument("shots", default_value="2048"),
         DeclareLaunchArgument("restarts", default_value="4"),
         DeclareLaunchArgument("seed", default_value="7"),
+        DeclareLaunchArgument("device", default_value="auto"),
     ]
 
     node = Node(
@@ -44,6 +45,7 @@ def generate_launch_description():
                 "shots": LaunchConfiguration("shots"),
                 "restarts": LaunchConfiguration("restarts"),
                 "seed": LaunchConfiguration("seed"),
+                "device": LaunchConfiguration("device"),
             }
         ],
     )

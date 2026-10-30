@@ -42,6 +42,7 @@ class QuantumOptimizerNode(Node):
         self.declare_parameter("shots", 2048)
         self.declare_parameter("restarts", 4)
         self.declare_parameter("seed", 7)
+        self.declare_parameter("device", "auto")
         self.declare_parameter("save_results", True)
 
         qos = QoSProfile(
@@ -160,6 +161,9 @@ class QuantumOptimizerNode(Node):
                 seed=int(
                     self.get_parameter("seed").value
                 ),
+                device=str(
+                    self.get_parameter("device").value
+                ),
             )
 
             # A* runs only afterwards, as an independent reference for the report.
@@ -199,6 +203,7 @@ class QuantumOptimizerNode(Node):
                 f"QAOA energy={quantum.total_energy:.3f} | "
                 f"classical A*={classical.total_energy:.3f} | "
                 f"qubits={quantum.qubits} | "
+                f"device={quantum.device} | "
                 f"valid_samples={quantum.valid_samples}"
             )
 
