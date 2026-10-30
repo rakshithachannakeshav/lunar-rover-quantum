@@ -763,7 +763,7 @@
     }
     enumerate(0, [], 0);
 
-    if (feasiblePaths.length === 0) { backbone.expanded = expanded; return backbone; }
+    if (feasiblePaths.length === 0) return null;  // no classical fallback
 
     // Phase 5: QAOA probability model — simulate quantum interference
     // Each feasible path gets a probability proportional to QAOA amplitudes

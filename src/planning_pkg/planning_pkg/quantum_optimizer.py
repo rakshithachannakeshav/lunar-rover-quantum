@@ -4,11 +4,12 @@ Phase 8: Quantum path optimization with a small, tractable QAOA instance.
 
 The Phase-6 graph can contain hundreds of edges. Running QAOA directly on that
 graph is not a useful CPU demonstration because the qubit count would explode.
-This module therefore builds a small "quantum corridor" from the Phase-7 A*
-backbone. Consecutive backbone anchors are connected by the baseline segment and,
-when available, a low-cost alternative segment. Each reduced-graph edge is an
-edge-selection binary in the QUBO; its metadata contains the original path
-segment so the quantum solution can be expanded back to the real terrain graph.
+This module therefore builds a small "quantum corridor" without any classical
+planner: a lattice of anchor nodes laid out geometrically between start and goal,
+with neighbouring anchors joined by straight-line walks through the terrain graph.
+Each reduced-graph edge is an edge-selection binary in the QUBO; its metadata
+contains the original path segment so the quantum solution can be expanded back
+to the real terrain graph. Choosing which edges form the route is left to QAOA.
 
 The QUBO enforces:
   * exactly one selected edge at the start,
@@ -91,7 +92,6 @@ class QuantumPlanResult:
     penalty: float
     valid_samples: int
     sampled_candidates: int
-    fallback_to_classical: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -132,66 +132,77 @@ def _path_distance(graph: nx.Graph, path: Sequence[Any]) -> float:
     return total
 
 
-def _segment_candidates(
-    graph: nx.Graph,
-    start: Any,
-    goal: Any,
-    baseline: Sequence[Any],
-    max_candidates: int = 6,
-) -> List[List[Any]]:
-    """Return distinct low-cost simple paths between two anchor nodes."""
-    try:
-        generator = nx.shortest_simple_paths(graph, start, goal, weight="weight")
-    except (nx.NetworkXNoPath, nx.NodeNotFound):
-        return [list(baseline)]
+def _connected(graph: nx.Graph, a: Any, b: Any) -> bool:
+    """Connectivity via connected components (no shortest-path search)."""
+    return b in nx.node_connected_component(graph, a)
 
-    candidates: List[List[Any]] = []
-    seen = set()
-    try:
-        for path in generator:
-            key = tuple(path)
-            if key in seen:
-                continue
-            seen.add(key)
-            candidates.append(list(path))
-            if len(candidates) >= max_candidates:
+
+def _lattice_shape(max_edges: int) -> Tuple[int, int]:
+    """Largest rows x cols anchor lattice (rows odd) with at most max_edges edges.
+
+    A 4-connected rows x cols lattice has rows*(cols-1) + cols*(rows-1) edges.
+    Rows are odd so start and goal sit on the centre row; a single row is only
+    used when max_edges is too small for three.
+    """
+    best: Optional[Tuple[int, int, int, int]] = None
+    for rows in range(1, max_edges + 2, 2):
+        for cols in range(2, max_edges + 2):
+            edges = rows * (cols - 1) + cols * (rows - 1)
+            if edges > max_edges:
                 break
-    except nx.NetworkXNoPath:
-        pass
+            candidate = (int(rows >= 3), edges, rows, cols)
+            if best is None or candidate > best:
+                best = candidate
+    if best is None:
+        raise ValueError("max_edges must be at least 1.")
+    return best[2], best[3]
 
-    baseline_key = tuple(baseline)
-    ordered: List[List[Any]] = []
-    for path in candidates:
-        if tuple(path) == baseline_key:
-            ordered.insert(0, path)
-        else:
-            ordered.append(path)
-    if not ordered:
-        ordered = [list(baseline)]
-    return ordered
+
+def _straight_walk(graph: nx.Graph, a: Any, b: Any) -> Optional[List[Any]]:
+    """Walk a->b by always stepping to the neighbour geometrically closest to b.
+
+    Pure geometry, no cost-based search: the walk ignores edge weights, so the
+    energy trade-off between macro-edges is left entirely to QAOA. Returns None
+    if an obstacle stops the walk from getting closer to b.
+    """
+    bx = float(graph.nodes[b].get("pos_x", 0.0))
+    by = float(graph.nodes[b].get("pos_y", 0.0))
+
+    def dist(n: Any) -> float:
+        return math.hypot(float(graph.nodes[n].get("pos_x", 0.0)) - bx,
+                          float(graph.nodes[n].get("pos_y", 0.0)) - by)
+
+    path = [a]
+    current = a
+    while current != b:
+        options = [(dist(n), str(n), n) for n in graph.neighbors(current)]
+        if not options:
+            return None
+        d, _, nxt = min(options)
+        if d >= dist(current):
+            return None
+        path.append(nxt)
+        current = nxt
+    return path
 
 
 def build_quantum_corridor(
     graph: nx.Graph,
     start: Any,
     goal: Any,
-    baseline_path: Sequence[Any],
-    max_edges: int = 10,
-    alternatives_per_segment: int = 2,
+    max_edges: int = 12,
+    width_ratio: float = 0.5,
 ) -> nx.MultiGraph:
     """
-    Build a <=max_edges reduced graph while preserving a valid A* backbone.
+    Build a <=max_edges reduced graph from a geometric lattice, with no classical planner.
 
-    The backbone is split into a small number of anchor-to-anchor segments.
-    Each segment becomes one baseline macro-edge plus at most one alternative
-    macro-edge. Macro-edge metadata stores the original node sequence.
+    Anchors form a rows x cols lattice aligned with the start->goal line, spanning
+    +/- width_ratio * |goal - start| either side of it, each snapped to the nearest
+    terrain node. Lattice neighbours are joined by a straight-line walk through the
+    terrain graph; that walk becomes one macro-edge whose weight is its real energy.
     """
-    baseline = list(baseline_path)
-    if len(baseline) < 2:
-        raise ValueError("Baseline path must contain at least start and goal.")
-
-    if max_edges < 2:
-        raise ValueError("max_edges must be at least 2.")
+    if max_edges < 1:
+        raise ValueError("max_edges must be at least 1.")
 
     # If the original graph is already tiny, retain it exactly.
     if graph.number_of_edges() <= max_edges:
@@ -207,67 +218,67 @@ def build_quantum_corridor(
             )
         return reduced
 
-    # Each segment gets baseline + one alternative, so this stays tractable.
-    max_segments = max(1, max_edges // 2)
-    n_segments = min(max_segments, len(baseline) - 1)
+    def pos(n: Any) -> np.ndarray:
+        return np.array([float(graph.nodes[n].get("pos_x", 0.0)),
+                         float(graph.nodes[n].get("pos_y", 0.0))])
 
-    # Evenly distribute anchors over the A* path.
-    anchor_indices = np.linspace(
-        0, len(baseline) - 1, n_segments + 1, dtype=int
-    ).tolist()
-    anchor_indices = sorted(set(anchor_indices))
-    if anchor_indices[-1] != len(baseline) - 1:
-        anchor_indices.append(len(baseline) - 1)
+    nodes = list(graph.nodes)
+    xy = np.array([pos(n) for n in nodes])
+    s_xy, g_xy = pos(start), pos(goal)
+    axis = g_xy - s_xy
+    length = float(np.hypot(*axis))
+    if length == 0.0:
+        raise ValueError("Start and goal resolve to the same position.")
+    perp = np.array([-axis[1], axis[0]]) / length
 
-    # If duplicate indices reduced the number of segments, that's fine.
+    rows, cols = _lattice_shape(max_edges)
+    mid = rows // 2
+    half_width = width_ratio * length
+
+    # Snap lattice points to terrain nodes; start/goal are fixed, duplicates dropped.
+    anchors: Dict[Tuple[int, int], Any] = {}
+    used = {start, goal}
+    for i in range(rows):
+        for j in range(cols):
+            if (i, j) == (mid, 0):
+                anchors[(i, j)] = start
+                continue
+            if (i, j) == (mid, cols - 1):
+                anchors[(i, j)] = goal
+                continue
+            offset = (i - mid) / mid * half_width if mid else 0.0
+            point = s_xy + axis * (j / (cols - 1)) + perp * offset
+            node = nodes[int(np.argmin(np.hypot(*(xy - point).T)))]
+            if node in used:
+                continue
+            anchors[(i, j)] = node
+            used.add(node)
+
     reduced = nx.MultiGraph()
-    for anchor in [baseline[i] for i in anchor_indices]:
-        reduced.add_node(anchor, **dict(graph.nodes[anchor]))
+    for node in anchors.values():
+        reduced.add_node(node, **dict(graph.nodes[node]))
 
-    for left, right in zip(anchor_indices[:-1], anchor_indices[1:]):
-        a = baseline[left]
-        b = baseline[right]
-        baseline_segment = baseline[left:right + 1]
-        candidates = _segment_candidates(
-            graph, a, b, baseline_segment,
-            max_candidates=max(3, alternatives_per_segment + 2),
-        )
-
-        # Always add the A* segment first.
-        chosen = [baseline_segment]
-        for candidate in candidates:
-            if tuple(candidate) != tuple(baseline_segment):
-                chosen.append(candidate)
-                break
-        if len(chosen) > alternatives_per_segment:
-            chosen = chosen[:alternatives_per_segment]
-
-        for candidate in chosen:
+    anchor_set = set(anchors.values())
+    for (i, j), a in anchors.items():
+        for ni, nj in ((i + 1, j), (i, j + 1)):
+            b = anchors.get((ni, nj))
+            if b is None:
+                continue
+            segment = _straight_walk(graph, a, b)
+            # Drop blocked walks and walks that cut through another anchor.
+            if segment is None or anchor_set.intersection(segment[1:-1]):
+                continue
             reduced.add_edge(
-                a,
-                b,
-                weight=_path_weight(graph, candidate),
-                path_nodes=list(candidate),
+                a, b,
+                weight=_path_weight(graph, segment),
+                path_nodes=segment,
                 macro=True,
             )
 
-    if reduced.number_of_edges() > max_edges:
-        # Deterministic safety valve: retain the lowest-cost edge per segment
-        # and the cheapest alternative edges until the requested limit.
-        edges = list(reduced.edges(keys=True, data=True))
-        edges.sort(key=lambda item: float(item[3].get("weight", math.inf)))
-        keep = edges[:max_edges]
-        trimmed = nx.MultiGraph()
-        for node, attrs in reduced.nodes(data=True):
-            trimmed.add_node(node, **dict(attrs))
-        for u, v, key, data in keep:
-            trimmed.add_edge(u, v, **dict(data))
-        reduced = trimmed
-
-    if not nx.has_path(reduced, start, goal):
+    if not _connected(reduced, start, goal):
         raise ValueError(
-            "Quantum corridor lost start-to-goal connectivity. "
-            "Increase --max-edges or use a shorter classical path."
+            "Quantum corridor has no start-to-goal connection "
+            "(obstacles block the lattice). Increase --max-edges or --corridor-width."
         )
     return reduced
 
@@ -320,7 +331,7 @@ def build_qubo(
     """
     if start not in reduced_graph or goal not in reduced_graph:
         raise ValueError("Start and goal must be present in the reduced graph.")
-    if not nx.has_path(reduced_graph, start, goal):
+    if not _connected(reduced_graph, start, goal):
         raise ValueError("Reduced graph must connect start to goal.")
 
     edges = list(reduced_graph.edges(keys=True, data=True))
@@ -581,7 +592,7 @@ def _selected_path_from_bits(
         if degree not in (0, 2):
             return None
 
-    if not nx.has_path(H, start, goal):
+    if not _connected(H, start, goal):
         return None
 
     # Follow the unique selected edge at each internal node.
@@ -667,8 +678,8 @@ def run_qaoa(
     graph: nx.Graph,
     start: Any,
     goal: Any,
-    baseline_path: Sequence[Any],
-    max_edges: int = 10,
+    max_edges: int = 12,
+    width_ratio: float = 0.5,
     reps: int = 1,
     shots: int = 2048,
     restarts: int = 4,
@@ -682,7 +693,7 @@ def run_qaoa(
 
     started = time.perf_counter()
     reduced = build_quantum_corridor(
-        graph, start, goal, baseline_path, max_edges=max_edges
+        graph, start, goal, max_edges=max_edges, width_ratio=width_ratio
     )
     qubo = build_qubo(reduced, start, goal, penalty=penalty)
     params, expectation = optimize_qaoa(
@@ -731,15 +742,13 @@ def run_qaoa(
         if best_valid is None or candidate[0] < best_valid[0]:
             best_valid = candidate
 
-    fallback = False
     if best_valid is None:
-        # The QAOA sample distribution can miss the feasible state at shallow p.
-        # Return the known-valid classical baseline rather than emitting a bad path.
-        fallback = True
-        best_path = list(baseline_path)
-        best_bitstring = "0" * qubo.num_variables
-    else:
-        _, best_bitstring, best_path, _ = best_valid
+        # No classical fallback: if QAOA sampled no feasible path, report the failure.
+        raise RuntimeError(
+            f"QAOA found no valid path in {sampled_candidates} shots "
+            f"({qubo.num_variables} qubits, reps={reps}); try more reps/shots/restarts."
+        )
+    _, best_bitstring, best_path, _ = best_valid
 
     coords = [
         (float(graph.nodes[n].get("pos_x", 0.0)),
@@ -769,7 +778,6 @@ def run_qaoa(
         penalty=qubo.penalty,
         valid_samples=valid_samples,
         sampled_candidates=sampled_candidates,
-        fallback_to_classical=fallback,
     )
 
 
@@ -797,7 +805,6 @@ def compare_quantum_classical(
             "shots": quantum.shots,
             "reps": quantum.reps,
             "valid_samples": quantum.valid_samples,
-            "fallback_to_classical": quantum.fallback_to_classical,
         },
         "classical": {
             "algorithm": classical.algorithm,
@@ -845,7 +852,11 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Phase-6 energy-weighted GraphML.",
     )
     parser.add_argument("--out", default="results/paths")
-    parser.add_argument("--max-edges", type=int, default=10)
+    parser.add_argument("--max-edges", type=int, default=12)
+    parser.add_argument(
+        "--corridor-width", type=float, default=0.5,
+        help="Lattice half-width as a fraction of the start-goal distance.",
+    )
     parser.add_argument("--reps", type=int, default=1)
     parser.add_argument("--shots", type=int, default=2048)
     parser.add_argument("--restarts", type=int, default=4)
@@ -858,16 +869,18 @@ def main(argv: Optional[List[str]] = None) -> int:
         graph = load_weighted_graph(args.graph)
         start = resolve_node(graph, args.start_x, args.start_y)
         goal = resolve_node(graph, args.goal_x, args.goal_y)
-        classical = run_astar(graph, start, goal)
         quantum = run_qaoa(
-            graph, start, goal, classical.path_nodes,
+            graph, start, goal,
             max_edges=args.max_edges,
+            width_ratio=args.corridor_width,
             reps=args.reps,
             shots=args.shots,
             restarts=args.restarts,
             seed=args.seed,
             penalty=args.penalty,
         )
+        # A* runs only afterwards, as an independent reference for the report.
+        classical = run_astar(graph, start, goal)
     except Exception as exc:
         print(f"[quantum_optimizer] ERROR: {exc}")
         return 1
@@ -886,8 +899,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     print(
         f"[quantum_optimizer] reduced graph: {quantum.reduced_nodes} nodes, "
-        f"{quantum.reduced_edges} edges; valid samples={quantum.valid_samples}; "
-        f"fallback={quantum.fallback_to_classical}"
+        f"{quantum.reduced_edges} edges; valid samples={quantum.valid_samples}"
     )
     print(f"[quantum_optimizer] Saved: {saved['latest']}")
     return 0

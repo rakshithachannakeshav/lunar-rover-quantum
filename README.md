@@ -273,7 +273,7 @@ PYTHONPATH=src/planning_pkg python3 -m planning_pkg.classical_planning \
 # QAOA (simulated) -> results/paths/latest_quantum.json   (takes a few seconds)
 PYTHONPATH=src/planning_pkg python3 -m planning_pkg.quantum_optimizer \
   --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5 \
-  --graph results/graphs/latest.graphml --max-edges 10 --shots 2048
+  --graph results/graphs/latest.graphml --max-edges 12 --shots 2048
 
 # Compare planners + distance-only baseline over 200 random routes
 #   -> results/energy_comparison/latest_comparison.json
@@ -284,7 +284,8 @@ python3 scripts/plot_energy_comparison.py
 python3 scripts/visualize_plan.py        # 2-D route overlay -> results/paths/latest_classical_plot.png
 ```
 
-Expect: QAOA energy equals A*/Dijkstra energy with `fallback=False`, and three PNGs
+Expect: QAOA energy equals A*/Dijkstra energy (QAOA has no classical fallback: if it samples
+no valid path it raises an error), and three PNGs
 (`energy_comparison`, `route_sweep`, `path_overlay`) plus `comparison_table.csv` in
 `results/energy_comparison/`. QAOA matches the classical optimum; it does not beat it.
 
@@ -429,7 +430,7 @@ E(edge) = d · S(θ) · T(type) · R(r)
   (`dijkstra`, `astar`, `qaoa`, `distance_only` — each `energy`, `distance_m`,
   `waypoints`, `runtime_ms`, `path_efficiency`, `energy_per_m`, `path_nodes`,
   `path_coords`, `extras`), `summary` (`best_energy_planner`, `qaoa_matches_classical`,
-  `qaoa_energy_ratio`, `qaoa_fallback`, `qaoa_runtime_ratio_vs_astar`,
+  `qaoa_energy_ratio`, `qaoa_runtime_ratio_vs_astar`,
   `energy_savings_vs_distance_only_pct`) and, with `--sweep`, `sweep` (per-route
   `savings_pct` + summary).
 - `/battery/status` — `sensor_msgs/BatteryState`; `percentage` is 0–1, `current` is
@@ -506,7 +507,7 @@ publishing canonical `/path/classical` (`nav_msgs/msg/Path`) and persisting
 or in RViz. See `docs/PROGRESS.md` and
 `docs/superpowers/specs/2026-09-13-phase7-classical-planner-design.md`.
 
-Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` formulate path selection as a QUBO and solve via QAOA with Qiskit AerSimulator, using `/odom` for the start and publishing `/path/quantum` (`nav_msgs/msg/Path`) with results saved to `results/paths/latest_quantum.json`. The quantum instance is deliberately reduced to roughly 8-12 edges (a corridor around the A* backbone) so it is tractable on the CPU `AerSimulator`; the resulting macro-edge path is expanded back into the original terrain graph before metrics are reported.
+Phase 8 is done: `planning_pkg.quantum_optimizer` and `quantum_optimizer_node` formulate path selection as a QUBO and solve via QAOA with Qiskit AerSimulator, using `/odom` for the start and publishing `/path/quantum` (`nav_msgs/msg/Path`) with results saved to `results/paths/latest_quantum.json`. The quantum instance is deliberately reduced to roughly 12 edges so it is tractable on the CPU `AerSimulator`. The corridor does not use A* or any other classical planner: it is a geometric lattice of anchor nodes between start and goal (`--max-edges`, `--corridor-width`), joined by straight-line walks through the terrain graph, and QAOA alone chooses the route; the resulting macro-edge path is expanded back into the original terrain graph before metrics are reported.
 
 **Phase 9 is done:** `navigation_pkg.path_executor_node` (`path_executor`) subscribes to `/path/quantum` or `/path/classical` and `/odom`, translating waypoints into velocity commands on `/cmd_vel`. `navigation_pipeline.launch.py` connects the full pipeline end-to-end. The control law lives in `navigation_pkg/path_following.py` (pure Python, unit-tested); the node subscribes to the path with `RELIABLE` + `TRANSIENT_LOCAL` QoS to match the planners, so a path published before the executor starts is still received.
 

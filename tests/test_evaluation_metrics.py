@@ -67,13 +67,12 @@ def _plan(algorithm, runtime_ms):
     }
 
 
-def _quantum(fallback=False, energy=3.0):
+def _quantum(energy=3.0):
     plan = _plan('QAOA', 5000.0)
     plan.update({
         'total_energy': energy,
         'qubits': 11, 'shots': 2048, 'reps': 1, 'reduced_edges': 8,
         'valid_samples': 24, 'sampled_candidates': 2048,
-        'fallback_to_classical': fallback,
     })
     return plan
 
@@ -105,7 +104,6 @@ def test_load_planner_metrics_reads_all_three(result_files):
 
     qaoa = planners['qaoa']
     assert qaoa.extras['qubits'] == 11
-    assert qaoa.extras['fallback_to_classical'] is False
 
 
 def test_list_node_ids_are_normalised_to_graphml_form(tmp_path):
@@ -147,7 +145,6 @@ def test_build_comparison_reports_savings_vs_distance_only(result_files, graph, 
     assert summary['reference'] == 'astar'
     assert summary['qaoa_matches_classical'] is True
     assert summary['qaoa_energy_ratio'] == pytest.approx(1.0)
-    assert summary['qaoa_fallback'] is False
     assert summary['qaoa_runtime_ratio_vs_astar'] == pytest.approx(5000.0 / 0.4)
     assert summary['best_energy_planner'] == 'astar'  # ties -> lowest runtime
     # (5.0 - 3.0) / 5.0 = 40 %
@@ -158,18 +155,6 @@ def test_build_comparison_without_graph_skips_baseline(result_files):
     comparison = build_comparison(*result_files, graph_path=None)
     assert 'distance_only' not in comparison['planners']
     assert comparison['summary']['energy_savings_vs_distance_only_pct'] is None
-
-
-def test_qaoa_fallback_is_flagged_not_hidden(tmp_path):
-    classical = tmp_path / 'c.json'
-    classical.write_text(json.dumps({
-        'dijkstra': _plan('Dijkstra', 1.0), 'astar': _plan('A*', 0.4),
-    }), encoding='utf-8')
-    quantum = tmp_path / 'q.json'
-    quantum.write_text(json.dumps({'quantum': _quantum(fallback=True)}), encoding='utf-8')
-
-    summary = build_comparison(str(classical), str(quantum))['summary']
-    assert summary['qaoa_fallback'] is True
 
 
 def test_qaoa_worse_than_classical_is_not_a_match(tmp_path):
