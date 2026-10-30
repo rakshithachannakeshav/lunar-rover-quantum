@@ -252,6 +252,47 @@ def load_graph(graphml_path: str) -> nx.Graph:
     return nx.read_graphml(graphml_path)
 
 
+def resolve_node(graph: nx.Graph, x: float, y: float, max_dist_factor: float = 5.0):
+    """Snap world coordinates (x, y) to the nearest graph node.
+
+    Planner-agnostic helper shared by the classical and quantum planners.
+
+    Raises:
+        ValueError: If the graph has no nodes, or (x, y) is abnormally far from it
+            (more than max_dist_factor bounding-box diagonals, min 20 m).
+    """
+    if graph.number_of_nodes() == 0:
+        raise ValueError("Cannot resolve node on an empty graph.")
+
+    best_node = None
+    min_dist_sq = float('inf')
+    xs = []
+    ys = []
+
+    for n, data in graph.nodes(data=True):
+        nx_val = float(data.get('pos_x', 0.0))
+        ny_val = float(data.get('pos_y', 0.0))
+        xs.append(nx_val)
+        ys.append(ny_val)
+
+        dist_sq = (nx_val - x) ** 2 + (ny_val - y) ** 2
+        if dist_sq < min_dist_sq:
+            min_dist_sq = dist_sq
+            best_node = n
+
+    diag = math.hypot(max(xs) - min(xs), max(ys) - min(ys))
+    threshold = max(diag * max_dist_factor, 20.0)
+    nearest_dist = math.sqrt(min_dist_sq)
+
+    if nearest_dist > threshold:
+        raise ValueError(
+            f"Coordinate ({x:.2f}, {y:.2f}) is too far from any graph node "
+            f"(nearest is at distance {nearest_dist:.2f} m > threshold {threshold:.2f} m)."
+        )
+
+    return best_node
+
+
 def main(argv=None) -> int:
     """CLI: build a graph from a terrain snapshot. `python -m planning_pkg.graph_model`."""
     import argparse

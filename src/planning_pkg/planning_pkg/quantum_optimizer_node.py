@@ -10,16 +10,8 @@ from nav_msgs.msg import Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
-from planning_pkg.classical_planning import (
-    load_weighted_graph,
-    resolve_node,
-    run_astar,
-)
-from planning_pkg.quantum_optimizer import (
-    compare_quantum_classical,
-    run_qaoa,
-    save_quantum_results,
-)
+from planning_pkg.graph_model import load_graph, resolve_node
+from planning_pkg.quantum_optimizer import run_qaoa, save_quantum_results
 
 
 class QuantumOptimizerNode(Node):
@@ -120,7 +112,7 @@ class QuantumOptimizerNode(Node):
             return
 
         try:
-            graph = load_weighted_graph(graph_path)
+            graph = load_graph(graph_path)
 
             start = resolve_node(
                 graph,
@@ -166,24 +158,11 @@ class QuantumOptimizerNode(Node):
                 ),
             )
 
-            # A* runs only afterwards, as an independent reference for the report.
-            classical = run_astar(
-                graph,
-                start,
-                goal,
-            )
-
-            comparison = compare_quantum_classical(
-                classical,
-                quantum,
-            )
-
             if bool(
                 self.get_parameter("save_results").value
             ):
                 saved = save_quantum_results(
                     quantum,
-                    comparison,
                     out_dir,
                 )
 
@@ -201,7 +180,6 @@ class QuantumOptimizerNode(Node):
 
             self.get_logger().info(
                 f"QAOA energy={quantum.total_energy:.3f} | "
-                f"classical A*={classical.total_energy:.3f} | "
                 f"qubits={quantum.qubits} | "
                 f"device={quantum.device} | "
                 f"valid_samples={quantum.valid_samples}"

@@ -278,6 +278,31 @@ PYTHONPATH=src/planning_pkg python3 -m planning_pkg.quantum_optimizer \
 # finds one, or force --device GPU / CPU. There is no qubit cap: a statevector
 # needs 16 * 2^qubits bytes, so --max-edges is limited only by device memory.
 #   pip uninstall qiskit-aer && pip install qiskit-aer-gpu
+#
+# QAOA is independent of A*/Dijkstra. planning_pkg.quantum_optimizer (and the
+# quantum_optimizer ROS node) never import or run a classical planner and have no
+# fallback. QAOA builds its own corridor (geometric lattice + weight-blind straight
+# walks), its own QUBO, and decodes its own path from sampled bitstrings. The only
+# shared input is the energy-weighted terrain graph from graph_model.
+
+# QAOA vs A* comparison. compare_planners runs QAOA to completion FIRST, then runs
+# A* on the same graph as a reference; A* output never feeds back into QAOA.
+# Adds a "comparison" block to results/paths/latest_quantum.json.
+PYTHONPATH=src/planning_pkg python3 -m planning_pkg.compare_planners \
+  --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5
+
+# Note: quantum_optimizer (CLI) and the quantum_optimizer ROS node used to run A*
+# afterwards and write a "comparison" block into latest_quantum.json. They no longer
+# do; only compare_planners does. Commands and flags for quantum_optimizer are
+# unchanged, and compare_planners accepts the same flags (--graph, --max-edges,
+# --shots, --reps, --restarts, --seed, --penalty, --device, ...). The evaluation step
+# (evaluation_pkg.metrics) reads only the "quantum" block, so it is unaffected.
+
+# Sanity check of how much QAOA itself contributes: rerun with very few shots.
+# If the answer still matches A*, QAOA is concentrating probability on good paths;
+# if it stops matching, earlier matches came from brute-force sampling.
+PYTHONPATH=src/planning_pkg python3 -m planning_pkg.compare_planners \
+  --start-x 0.0 --start-y 0.0 --goal-x 1.5 --goal-y 1.5 --shots 32
 
 
 # Compare planners + distance-only baseline over 200 random routes
@@ -293,6 +318,14 @@ Expect: QAOA energy equals A*/Dijkstra energy (QAOA has no classical fallback: i
 no valid path it raises an error), and three PNGs
 (`energy_comparison`, `route_sweep`, `path_overlay`) plus `comparison_table.csv` in
 `results/energy_comparison/`. QAOA matches the classical optimum; it does not beat it.
+
+Why QAOA can equal A* even though it is independent: when the graph has at most
+`--max-edges` (default 12) edges it is kept whole, so QAOA solves the full problem and
+the true optimum is the same one A* finds. With about 12 qubits there are only 4096
+states, and 2048 shots followed by "keep the lowest-energy valid sample" can reach the
+optimum even if the trained angles contribute little. A match is therefore expected on
+small graphs and is not evidence of reuse; use the low-`--shots` check above to see
+QAOA's real contribution.
 
 ### Step 5 — Live drive, classical planner (Phase 9)
 
