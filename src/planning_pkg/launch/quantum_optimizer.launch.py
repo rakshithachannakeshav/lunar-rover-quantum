@@ -17,11 +17,13 @@ def generate_launch_description():
         DeclareLaunchArgument("goal_y", default_value="5.0"),
         DeclareLaunchArgument("frame_id", default_value="map"),
         DeclareLaunchArgument("out_dir", default_value="results/paths"),
-        DeclareLaunchArgument("max_edges", default_value="10"),
+        DeclareLaunchArgument("max_edges", default_value="12"),
+        DeclareLaunchArgument("corridor_width", default_value="0.5"),
         DeclareLaunchArgument("reps", default_value="1"),
         DeclareLaunchArgument("shots", default_value="2048"),
         DeclareLaunchArgument("restarts", default_value="4"),
         DeclareLaunchArgument("seed", default_value="7"),
+        DeclareLaunchArgument("device", default_value="auto"),
     ]
 
     node = Node(
@@ -38,10 +40,12 @@ def generate_launch_description():
                 "frame_id": LaunchConfiguration("frame_id"),
                 "out_dir": LaunchConfiguration("out_dir"),
                 "max_edges": LaunchConfiguration("max_edges"),
+                "corridor_width": LaunchConfiguration("corridor_width"),
                 "reps": LaunchConfiguration("reps"),
                 "shots": LaunchConfiguration("shots"),
                 "restarts": LaunchConfiguration("restarts"),
                 "seed": LaunchConfiguration("seed"),
+                "device": LaunchConfiguration("device"),
             }
         ],
     )

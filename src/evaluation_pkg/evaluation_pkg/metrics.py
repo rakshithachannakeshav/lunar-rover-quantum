@@ -54,7 +54,7 @@ CLASSICAL_KEYS = ('dijkstra', 'astar')
 REFERENCE_PLANNER = 'astar'
 QUANTUM_EXTRA_KEYS = (
     'qubits', 'shots', 'reps', 'reduced_edges', 'reduced_nodes',
-    'valid_samples', 'sampled_candidates', 'fallback_to_classical', 'penalty',
+    'valid_samples', 'sampled_candidates', 'penalty',
 )
 
 
@@ -284,7 +284,6 @@ def _summarise(planners: Dict[str, PlannerMetrics]) -> Dict[str, Any]:
         'best_energy': best_energy,
         'qaoa_matches_classical': abs(qaoa.energy - ref.energy) <= tol,
         'qaoa_energy_ratio': (qaoa.energy / ref.energy) if ref.energy > 0.0 else None,
-        'qaoa_fallback': bool(qaoa.extras.get('fallback_to_classical', False)),
         'qaoa_runtime_ratio_vs_astar': (
             qaoa.runtime_ms / ref.runtime_ms if ref.runtime_ms > 0.0 else None
         ),
@@ -474,7 +473,7 @@ def main(argv: Optional[List[str]] = None) -> int:
               f"runtime={p['runtime_ms']:.2f} ms")
     summary = comparison['summary']
     print(f"[evaluation] QAOA matches classical optimum: {summary['qaoa_matches_classical']} "
-          f"(energy ratio {summary['qaoa_energy_ratio']}, fallback={summary['qaoa_fallback']})")
+          f"(energy ratio {summary['qaoa_energy_ratio']})")
     if summary['energy_savings_vs_distance_only_pct'] is not None:
         print(f"[evaluation] energy saved vs distance-only path: "
               f"{summary['energy_savings_vs_distance_only_pct']:.2f} %")

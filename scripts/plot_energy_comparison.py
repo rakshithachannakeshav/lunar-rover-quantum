@@ -98,9 +98,6 @@ def _qaoa_headline(summary):
     ratio = summary.get('qaoa_energy_ratio')
     slower = summary.get('qaoa_runtime_ratio_vs_astar')
     slow_txt = f' but takes {slower:,.0f}× longer than A*' if slower else ''
-    if summary.get('qaoa_fallback'):
-        return ('QAOA fell back to the classical path - its numbers are not an '
-                'independent quantum result')
     if summary.get('qaoa_matches_classical'):
         return f'QAOA finds the classical optimum (energy ratio {ratio:.2f}){slow_txt}'
     return f'QAOA energy is {ratio:.2f}× the classical optimum{slow_txt}'

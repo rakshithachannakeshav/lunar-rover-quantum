@@ -36,11 +36,13 @@ class QuantumOptimizerNode(Node):
         self.declare_parameter("goal_y", 5.0)
         self.declare_parameter("frame_id", "map")
         self.declare_parameter("out_dir", "results/paths")
-        self.declare_parameter("max_edges", 10)
+        self.declare_parameter("max_edges", 12)
+        self.declare_parameter("corridor_width", 0.5)
         self.declare_parameter("reps", 1)
         self.declare_parameter("shots", 2048)
         self.declare_parameter("restarts", 4)
         self.declare_parameter("seed", 7)
+        self.declare_parameter("device", "auto")
         self.declare_parameter("save_results", True)
 
         qos = QoSProfile(
@@ -137,24 +139,15 @@ class QuantumOptimizerNode(Node):
                 f"{self.start_y:.2f}) to ({gx:.2f}, {gy:.2f})"
             )
 
-            classical = run_astar(
-                graph,
-                start,
-                goal,
-            )
-
-            self.get_logger().info(
-                f"A*: {classical.total_energy:.4f} energy / "
-                f"{len(classical.path_nodes)} waypoints"
-            )
-
             quantum = run_qaoa(
                 graph,
                 start,
                 goal,
-                classical.path_nodes,
                 max_edges=int(
                     self.get_parameter("max_edges").value
+                ),
+                width_ratio=float(
+                    self.get_parameter("corridor_width").value
                 ),
                 reps=int(
                     self.get_parameter("reps").value
@@ -168,6 +161,16 @@ class QuantumOptimizerNode(Node):
                 seed=int(
                     self.get_parameter("seed").value
                 ),
+                device=str(
+                    self.get_parameter("device").value
+                ),
+            )
+
+            # A* runs only afterwards, as an independent reference for the report.
+            classical = run_astar(
+                graph,
+                start,
+                goal,
             )
 
             comparison = compare_quantum_classical(
@@ -200,8 +203,8 @@ class QuantumOptimizerNode(Node):
                 f"QAOA energy={quantum.total_energy:.3f} | "
                 f"classical A*={classical.total_energy:.3f} | "
                 f"qubits={quantum.qubits} | "
-                f"valid_samples={quantum.valid_samples} | "
-                f"fallback={quantum.fallback_to_classical}"
+                f"device={quantum.device} | "
+                f"valid_samples={quantum.valid_samples}"
             )
 
             self.get_logger().info(

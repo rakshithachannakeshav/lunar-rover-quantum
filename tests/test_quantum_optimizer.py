@@ -19,6 +19,7 @@ if PKG_DIR not in sys.path:
 
 from planning_pkg.classical_planning import run_astar
 from planning_pkg.quantum_optimizer import (
+    _lattice_shape,
     build_quantum_corridor,
     build_qubo,
     compare_quantum_classical,
@@ -47,19 +48,68 @@ def graph():
 
 
 def test_corridor_is_connected_and_small(graph):
-    baseline = run_astar(graph, "A", "D")
-    reduced = build_quantum_corridor(
-        graph, "A", "D", baseline.path_nodes, max_edges=6
-    )
+    reduced = build_quantum_corridor(graph, "A", "D", max_edges=8)
     assert nx.has_path(reduced, "A", "D")
-    assert reduced.number_of_edges() <= 6
+    assert reduced.number_of_edges() <= 8
+
+
+def _grid(n, blocked=()):
+    g = nx.Graph()
+    for r in range(n):
+        for c in range(n):
+            if (r, c) not in blocked:
+                g.add_node((r, c), pos_x=float(c), pos_y=float(r))
+    for r, c in list(g.nodes):
+        for dr, dc in ((0, 1), (1, 0), (1, 1), (1, -1)):
+            nb = (r + dr, c + dc)
+            if nb in g:
+                g.add_edge((r, c), nb, weight=math.hypot(dr, dc))
+    return g
+
+
+def test_lattice_shape_fits_edge_budget():
+    assert _lattice_shape(12) == (3, 3)
+    assert _lattice_shape(7) == (3, 2)
+    assert _lattice_shape(4) == (1, 5)
+    rows, cols = _lattice_shape(40)
+    assert rows % 2 == 1 and rows * (cols - 1) + cols * (rows - 1) <= 40
+
+
+def test_lattice_corridor_on_large_grid_uses_no_classical_planner(monkeypatch):
+    import planning_pkg.quantum_optimizer as qo
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("corridor must not call a classical planner")
+
+    monkeypatch.setattr(qo, "run_astar", forbidden)
+    monkeypatch.setattr(nx, "shortest_simple_paths", forbidden)
+    monkeypatch.setattr(nx, "shortest_path", forbidden)
+    monkeypatch.setattr(nx, "dijkstra_path", forbidden)
+
+    g = _grid(15)
+    start, goal = (7, 1), (7, 13)
+    reduced = qo.build_quantum_corridor(g, start, goal, max_edges=12)
+    assert reduced.number_of_edges() == 12
+    assert goal in nx.node_connected_component(reduced, start)
+    for u, v, data in reduced.edges(data=True):
+        segment = data["path_nodes"]
+        assert {segment[0], segment[-1]} == {u, v}
+        assert nx.is_path(g, segment)
+
+
+def test_lattice_corridor_routes_around_a_wall():
+    # Wall across the straight start-goal line, open above and below.
+    wall = {(r, 7) for r in range(4, 11)}
+    g = _grid(15, blocked=wall)
+    start, goal = (7, 1), (7, 13)
+    reduced = build_quantum_corridor(g, start, goal, max_edges=12)
+    assert nx.has_path(reduced, start, goal)
+    for _, _, data in reduced.edges(data=True):
+        assert not wall.intersection(data["path_nodes"])
 
 
 def test_qubo_has_edge_and_activation_variables(graph):
-    baseline = run_astar(graph, "A", "D")
-    reduced = build_quantum_corridor(
-        graph, "A", "D", baseline.path_nodes, max_edges=6
-    )
+    reduced = build_quantum_corridor(graph, "A", "D", max_edges=8)
     qubo = build_qubo(reduced, "A", "D")
     assert qubo.num_variables >= reduced.number_of_edges()
     assert len(qubo.edge_variables) == reduced.number_of_edges()
@@ -68,10 +118,7 @@ def test_qubo_has_edge_and_activation_variables(graph):
 
 
 def test_qubo_penalty_prefers_valid_selection(graph):
-    baseline = run_astar(graph, "A", "D")
-    reduced = build_quantum_corridor(
-        graph, "A", "D", baseline.path_nodes, max_edges=6
-    )
+    reduced = build_quantum_corridor(graph, "A", "D", max_edges=8)
     qubo = build_qubo(reduced, "A", "D")
 
     zeros = [0] * qubo.num_variables
@@ -85,10 +132,7 @@ def test_qubo_penalty_prefers_valid_selection(graph):
 
 
 def test_ising_conversion_is_finite(graph):
-    baseline = run_astar(graph, "A", "D")
-    reduced = build_quantum_corridor(
-        graph, "A", "D", baseline.path_nodes, max_edges=6
-    )
+    reduced = build_quantum_corridor(graph, "A", "D", max_edges=8)
     qubo = build_qubo(reduced, "A", "D")
     h, zz = qubo_to_ising(qubo)
     assert len(h) == qubo.num_variables or len(h) > 0
@@ -125,3 +169,42 @@ def test_classical_comparison_schema(graph):
     assert result["energy_delta"] == 0.0
     assert "quantum" in result
     assert "classical" in result
+
+
+def test_aer_expectation_matches_exact_qubo_cost(graph):
+    """The Aer-side <C> must equal sum_x p(x) * QUBO(x) over all basis states."""
+    pytest.importorskip("qiskit_aer")
+    import numpy as np
+    from qiskit import transpile
+    from qiskit_aer import AerSimulator
+
+    from planning_pkg.quantum_optimizer import _cost_lookup, _ising_operator, _qaoa_circuit
+
+    reduced = build_quantum_corridor(graph, "A", "D", max_edges=8)
+    qubo = build_qubo(reduced, "A", "D")
+    n = qubo.num_variables
+    h, zz = qubo_to_ising(qubo)
+
+    qc = _qaoa_circuit(n, h, zz, [0.4, 1.1], [0.3, 0.8])
+    qc.save_statevector()
+    qc.save_expectation_value(_ising_operator(qubo), list(range(n)))
+    backend = AerSimulator(method="statevector")
+    data = backend.run(transpile(qc, backend)).result().data(0)
+
+    probs = np.abs(np.asarray(data["statevector"])) ** 2
+    exact = float(np.dot(probs, _cost_lookup(qubo)))
+    assert float(np.real(data["expectation_value"])) == pytest.approx(exact, rel=1e-9)
+
+
+def test_resolve_device_auto_and_rejects_missing():
+    pytest.importorskip("qiskit_aer")
+    from qiskit_aer import AerSimulator
+
+    from planning_pkg.quantum_optimizer import resolve_device
+
+    available = AerSimulator().available_devices()
+    assert resolve_device("auto") in available
+    assert resolve_device("cpu") == "CPU"
+    if "GPU" not in available:
+        with pytest.raises(RuntimeError, match="qiskit-aer-gpu"):
+            resolve_device("GPU")
