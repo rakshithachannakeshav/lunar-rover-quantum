@@ -293,6 +293,27 @@ def resolve_node(graph: nx.Graph, x: float, y: float, max_dist_factor: float = 5
     return best_node
 
 
+ENDPOINT_EPS = 0.01
+
+
+def endpoint_path(coords, start, goal):
+    """Pin the graph path to the exact endpoints.
+
+    QAOA plans between the graph nodes nearest to start and goal, so its path
+    ends on a node centre up to half a cell (or more) from the requested goal.
+    The exact goal (and an explicit start) are added so the rover drives all
+    the way from one endpoint to the other.
+    """
+    coords = [(float(x), float(y)) for x, y in coords]
+    if start is not None and (
+        not coords or math.dist(coords[0], start) > ENDPOINT_EPS
+    ):
+        coords.insert(0, (float(start[0]), float(start[1])))
+    if not coords or math.dist(coords[-1], goal) > ENDPOINT_EPS:
+        coords.append((float(goal[0]), float(goal[1])))
+    return coords
+
+
 def main(argv=None) -> int:
     """CLI: build a graph from a terrain snapshot. `python -m planning_pkg.graph_model`."""
     import argparse
