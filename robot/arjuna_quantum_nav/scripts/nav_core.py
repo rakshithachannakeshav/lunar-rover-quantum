@@ -523,6 +523,13 @@ class WaypointFollower(object):
         self.index = 0
         self.done = False
 
+    def retarget_nearest(self, x, y):
+        """After a detour, aim at the nearest waypoint not yet reached (never backwards)."""
+        if self.done:
+            return
+        self.index = min(range(self.index, len(self.waypoints)),
+                         key=lambda i: math.hypot(self.waypoints[i][0] - x, self.waypoints[i][1] - y))
+
     def step(self, x, y, yaw, max_linear=None):
         if self.done:
             return 0.0, 0.0, True
@@ -540,6 +547,137 @@ class WaypointFollower(object):
         lim = self.max_linear if max_linear is None else min(self.max_linear, max_linear)
         lin, ang = compute_command(x, y, yaw, gx, gy, lim, self.max_angular)
         return lin, ang, False
+
+
+# ── lidar obstacle avoidance (port of navigation_pkg/path_following.py) ──────
+# Distances are tuned for the Arjuna kit (~0.4 m footprint, 0.10-0.12 m/s).
+FRONT_HALF_ANGLE = math.radians(30.0)   # front sector: +-30 deg
+SIDE_MAX_ANGLE = math.radians(100.0)    # side sectors: 30..100 deg each way
+REAR_HALF_ANGLE = math.radians(30.0)    # rear sector, checked before reversing
+SELF_FILTER_RANGE = 0.12                # returns this close are the robot itself
+
+
+class ScanSectors(object):
+    """A scan reduced to front (nearest), left/right (mean clearance), rear (nearest),
+    and left_near/right_near (nearest return on each flank, for side clearance)."""
+
+    def __init__(self, front, left, right, rear=float("inf"),
+                 left_near=float("inf"), right_near=float("inf")):
+        self.front = front
+        self.left = left
+        self.right = right
+        self.rear = rear
+        self.left_near = left_near
+        self.right_near = right_near
+
+
+def scan_sectors(ranges, angle_min, angle_increment, range_max, range_min=0.0,
+                 yaw_offset=0.0, self_filter=SELF_FILTER_RANGE):
+    """Reduce LaserScan ranges to ScanSectors (angle 0 = straight ahead after yaw_offset).
+
+    inf / nan / out-of-range returns count as range_max (nothing seen).
+    """
+    floor = max(range_min, self_filter)
+    front = rear = range_max
+    left, right = [], []
+    for i, r in enumerate(ranges):
+        if r is None or math.isnan(r) or r < floor:
+            continue
+        r = min(float(r), range_max)
+        a = wrap_angle(angle_min + i * angle_increment + yaw_offset)
+        if abs(a) <= FRONT_HALF_ANGLE:
+            front = min(front, r)
+        elif FRONT_HALF_ANGLE < a <= SIDE_MAX_ANGLE:
+            left.append(r)
+        elif -SIDE_MAX_ANGLE <= a < -FRONT_HALF_ANGLE:
+            right.append(r)
+        elif abs(a) >= math.pi - REAR_HALF_ANGLE:
+            rear = min(rear, r)
+    return ScanSectors(front,
+                       sum(left) / len(left) if left else range_max,
+                       sum(right) / len(right) if right else range_max,
+                       rear,
+                       min(left) if left else range_max,
+                       min(right) if right else range_max)
+
+
+class ObstacleAvoider(object):
+    """Lidar reflex that takes over from path following while something is in the way.
+
+    clear -> (front < stop) -> turning away towards the more open side
+    turning -> (front > clear) -> bypassing: straight ahead for commit_distance
+    bypassing -> clear (detour finished), or back to turning if blocked again.
+    backing (reverse, only if the rear is clear) runs first when very close.
+    Flank guard: whenever something is closer than side_clearance on one side,
+    keep moving but veer away from it (the front cone alone misses the robot's
+    sides clipping an obstacle while driving past it).
+
+    The chosen side sticks until reset_side() (called when a waypoint is reached)
+    so the robot does not dither left/right in front of one obstacle.
+    update() returns ((linear, angular) or None to follow the path, detour_finished).
+    """
+
+    CLEAR, BACKING, TURNING, BYPASSING = "clear", "backing", "turning", "bypassing"
+
+    def __init__(self, stop_distance=0.40, clear_distance=0.60, backup_distance=0.22,
+                 commit_distance=0.40, rear_clearance=0.25, max_linear=0.12,
+                 max_angular=0.6, backup_speed=0.05, side_clearance=0.32):
+        self.stop_distance = stop_distance
+        self.clear_distance = clear_distance
+        self.backup_distance = backup_distance
+        self.commit_distance = commit_distance
+        self.rear_clearance = rear_clearance
+        self.max_linear = max_linear
+        self.max_angular = max_angular
+        self.backup_speed = backup_speed
+        self.side_clearance = side_clearance
+        self.state = self.CLEAR
+        self.side = None          # +1 = turn left, -1 = turn right
+        self._bypass_from = (0.0, 0.0)
+
+    @property
+    def active(self):
+        return self.state != self.CLEAR
+
+    def reset_side(self):
+        if not self.active:
+            self.side = None
+
+    def _flank_guard(self, scan):
+        """Veer away from an obstacle too close on one side, or None if both sides are clear."""
+        if min(scan.left_near, scan.right_near) >= self.side_clearance:
+            return None
+        away = -1 if scan.left_near < scan.right_near else 1
+        return (0.5 * self.max_linear, away * 0.7 * self.max_angular)
+
+    def update(self, scan, x, y):
+        if self.state == self.CLEAR:
+            if scan.front >= self.stop_distance:
+                guard = self._flank_guard(scan)
+                return guard, False
+            if self.side is None:
+                self.side = 1 if scan.left >= scan.right else -1
+            self.state = self.BACKING if scan.front < self.backup_distance else self.TURNING
+
+        if self.state == self.BACKING:
+            if scan.front < self.backup_distance + 0.08 and scan.rear > self.rear_clearance:
+                return (-self.backup_speed, 0.0), False
+            self.state = self.TURNING  # backed off enough, or the rear is blocked: turn in place
+
+        if self.state == self.TURNING:
+            if scan.front < self.clear_distance:
+                return (0.0, self.side * self.max_angular), False
+            self.state = self.BYPASSING
+            self._bypass_from = (x, y)
+
+        # bypassing
+        if scan.front < self.stop_distance:
+            self.state = self.BACKING if scan.front < self.backup_distance else self.TURNING
+            return self.update(scan, x, y)
+        if math.hypot(x - self._bypass_from[0], y - self._bypass_from[1]) < self.commit_distance:
+            return self._flank_guard(scan) or (0.7 * self.max_linear, 0.0), False
+        self.state = self.CLEAR
+        return None, True
 
 
 def uphill_speed_cap(max_linear, pitch_rad):

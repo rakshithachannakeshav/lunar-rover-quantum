@@ -26,6 +26,23 @@ def generate_launch_description():
     )
     goal_x_arg = DeclareLaunchArgument("goal_x", default_value="35.0")
     goal_y_arg = DeclareLaunchArgument("goal_y", default_value="5.0")
+    # Start endpoint. Left as .nan the quantum planner starts from the rover's
+    # /odom pose; set it and the rover drives to the start first, then to the goal.
+    start_x_arg = DeclareLaunchArgument("start_x", default_value=".nan")
+    start_y_arg = DeclareLaunchArgument("start_y", default_value=".nan")
+    executor_args = [
+        DeclareLaunchArgument("goal_tolerance", default_value="0.15",
+                              description="metres from the goal that counts as arrived"),
+        DeclareLaunchArgument("avoid_obstacles", default_value="true",
+                              description="use /scan to steer round obstacles"),
+        DeclareLaunchArgument("stop_distance", default_value="0.7",
+                              description="obstacle this close ahead triggers avoidance"),
+    ]
+    executor_params = {
+        "goal_tolerance": LaunchConfiguration("goal_tolerance"),
+        "avoid_obstacles": LaunchConfiguration("avoid_obstacles"),
+        "stop_distance": LaunchConfiguration("stop_distance"),
+    }
     # QAOA knobs (quantum mode only). selection:=most_likely or top judges QAOA
     # on its own output distribution instead of best-of-N sampling.
     qaoa_args = [
@@ -53,6 +70,8 @@ def generate_launch_description():
         parameters=[
             {
                 "graph_path": LaunchConfiguration("graph_path"),
+                "start_x": LaunchConfiguration("start_x"),
+                "start_y": LaunchConfiguration("start_y"),
                 "goal_x": LaunchConfiguration("goal_x"),
                 "goal_y": LaunchConfiguration("goal_y"),
                 "selection": LaunchConfiguration("selection"),
@@ -89,7 +108,7 @@ def generate_launch_description():
         name="path_executor",
         output="screen",
         emulate_tty=True,
-        parameters=[{"path_topic": "/path/quantum"}],
+        parameters=[{"path_topic": "/path/quantum", **executor_params}],
         condition=IfCondition(is_quantum),
     )
 
@@ -99,7 +118,7 @@ def generate_launch_description():
         name="path_executor",
         output="screen",
         emulate_tty=True,
-        parameters=[{"path_topic": "/path/classical"}],
+        parameters=[{"path_topic": "/path/classical", **executor_params}],
         condition=IfCondition(is_classical),
     )
 
@@ -109,6 +128,9 @@ def generate_launch_description():
             graph_path_arg,
             goal_x_arg,
             goal_y_arg,
+            start_x_arg,
+            start_y_arg,
+            *executor_args,
             *qaoa_args,
             quantum_planner,
             classical_planner,

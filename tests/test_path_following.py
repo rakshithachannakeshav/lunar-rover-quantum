@@ -18,10 +18,14 @@ if PKG_DIR not in sys.path:
     sys.path.insert(0, PKG_DIR)
 
 from navigation_pkg.path_following import (  # noqa: E402
+    DEFAULT_GOAL_TOLERANCE,
     DEFAULT_MAX_ANGULAR,
     DEFAULT_MAX_LINEAR,
+    ObstacleAvoider,
+    ScanSectors,
     WaypointFollower,
     compute_command,
+    scan_sectors,
     wrap_angle,
     yaw_from_quaternion,
 )
@@ -134,3 +138,122 @@ def test_closed_loop_drive_reaches_every_waypoint():
     assert follower.done
     assert reached == [0, 1, 2, 3]
     assert math.hypot(x - waypoints[-1][0], y - waypoints[-1][1]) <= 0.5
+
+
+# --- obstacle avoidance -----------------------------------------------------
+
+N_BEAMS = 360
+ANGLE_MIN = -math.pi
+ANGLE_INC = 2.0 * math.pi / N_BEAMS
+RANGE_MAX = 12.0
+
+
+def _scan_with(obstacles):
+    """Ranges for a 360-beam lidar: obstacles is a list of (angle, range) to place."""
+    ranges = [float('inf')] * N_BEAMS
+    for angle, r in obstacles:
+        i = int(round((angle - ANGLE_MIN) / ANGLE_INC)) % N_BEAMS
+        ranges[i] = r
+    return ranges
+
+
+def test_default_goal_tolerance_is_tight():
+    # 0.5 m used to stop the rover half a metre short of the goal.
+    assert DEFAULT_GOAL_TOLERANCE <= 0.2
+
+
+def test_scan_sectors_reads_front_and_sides():
+    ranges = _scan_with([(0.0, 0.6), (1.0, 0.8), (-1.0, 3.0)])
+    s = scan_sectors(ranges, ANGLE_MIN, ANGLE_INC, RANGE_MAX)
+    assert s.front == pytest.approx(0.6)
+    assert s.left < s.right  # left side has the close return
+
+
+def test_scan_sectors_ignores_inf_nan_and_self_hits():
+    ranges = _scan_with([(0.0, 0.1), (0.1, float('nan'))])
+    s = scan_sectors(ranges, ANGLE_MIN, ANGLE_INC, RANGE_MAX, range_min=0.12)
+    assert s.front == pytest.approx(RANGE_MAX)
+
+
+def test_avoider_ignores_distant_obstacles():
+    avoider = ObstacleAvoider()
+    command, done = avoider.update(ScanSectors(front=3.0, left=5.0, right=5.0), 0.0, 0.0)
+    assert command is None and not done and not avoider.active
+
+
+def test_avoider_turns_towards_the_more_open_side():
+    left_open = ObstacleAvoider()
+    (lin, ang), _ = left_open.update(ScanSectors(front=0.5, left=4.0, right=1.0), 0.0, 0.0)
+    assert lin == pytest.approx(0.0) and ang > 0.0
+
+    right_open = ObstacleAvoider()
+    (lin, ang), _ = right_open.update(ScanSectors(front=0.5, left=1.0, right=4.0), 0.0, 0.0)
+    assert lin == pytest.approx(0.0) and ang < 0.0
+
+
+def test_avoider_backs_up_when_very_close():
+    avoider = ObstacleAvoider()
+    (lin, ang), _ = avoider.update(ScanSectors(front=0.25, left=2.0, right=2.0), 0.0, 0.0)
+    assert lin < 0.0 and ang == pytest.approx(0.0)
+
+
+def test_avoider_bypasses_then_hands_back():
+    avoider = ObstacleAvoider(commit_distance=0.5)
+    avoider.update(ScanSectors(front=0.5, left=4.0, right=1.0), 0.0, 0.0)
+    (lin, ang), _ = avoider.update(ScanSectors(front=5.0, left=4.0, right=1.0), 0.0, 0.0)
+    assert lin > 0.0 and ang == pytest.approx(0.0)  # driving straight past it
+    command, done = avoider.update(ScanSectors(front=5.0, left=4.0, right=1.0), 0.6, 0.0)
+    assert command is None and done and not avoider.active
+
+
+def test_follower_without_scan_behaves_as_before():
+    follower = WaypointFollower([(2.0, 0.0)])
+    result = follower.step(0.0, 0.0, 0.0)
+    assert not result.avoiding and result.linear > 0.0
+
+
+def _simulated_scan(x, y, yaw, rocks):
+    """Ray-cast a 360-beam lidar against circular rocks [(cx, cy, radius)]."""
+    ranges = []
+    for i in range(N_BEAMS):
+        a = yaw + ANGLE_MIN + i * ANGLE_INC
+        dx, dy = math.cos(a), math.sin(a)
+        best = float('inf')
+        for cx, cy, rad in rocks:
+            fx, fy = x - cx, y - cy
+            b = fx * dx + fy * dy
+            c = fx * fx + fy * fy - rad * rad
+            disc = b * b - c
+            if disc >= 0.0:
+                t = -b - math.sqrt(disc)
+                if t > 0.0:
+                    best = min(best, t)
+        ranges.append(best)
+    return scan_sectors(ranges, ANGLE_MIN, ANGLE_INC, RANGE_MAX)
+
+
+def test_closed_loop_drive_goes_round_a_rock_to_the_exact_goal():
+    """A rock sits on the straight line to the goal: the rover must not hit it,
+    must go round, and must finish within the goal tolerance of the endpoint."""
+    rock = (2.0, 0.05, 0.4)
+    goal = (4.0, 0.0)
+    follower = WaypointFollower([(1.0, 0.0), (2.0, 0.0), (3.0, 0.0), goal])
+    x, y, yaw, dt = 0.0, 0.0, 0.0, 0.05
+    closest = float('inf')
+    avoided = False
+
+    for _ in range(12000):  # 600 s of simulated time
+        scan = _simulated_scan(x, y, yaw, [rock])
+        result = follower.step(x, y, yaw, scan)
+        avoided |= result.avoiding
+        x += result.linear * math.cos(yaw) * dt
+        y += result.linear * math.sin(yaw) * dt
+        yaw = wrap_angle(yaw + result.angular * dt)
+        closest = min(closest, math.hypot(x - rock[0], y - rock[1]) - rock[2])
+        if follower.done:
+            break
+
+    assert follower.done
+    assert avoided
+    assert closest > 0.15  # never drove into the rock
+    assert math.hypot(x - goal[0], y - goal[1]) <= DEFAULT_GOAL_TOLERANCE

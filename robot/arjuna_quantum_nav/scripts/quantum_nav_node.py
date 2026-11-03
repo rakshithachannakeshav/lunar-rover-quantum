@@ -8,11 +8,13 @@ Runs ON the Jetson Nano alongside the kit's own bringup, which already provides:
     /map                               map_server (optional)
     /cmd_vel  -> Arjuna_ticks_pub.py   turns Twist into STS servo wheel speeds
 
-This node:  goal (RViz "2D Nav Goal" or ~goal_x/~goal_y)
+This node:  goal (RViz "2D Nav Goal" or ~goal_x/~goal_y, optionally from ~start_x/~start_y)
             -> plan on the map with the chosen algorithm ("auto" runs all three
                and drives the best: lowest energy, ties -> fastest)
             -> follow the path on the fused pose, publishing /cmd_vel
-            -> stops for: stale pose, LiDAR/sonar obstacle ahead, excessive tilt
+            -> obstacle ahead (LiDAR/sonar): turn towards the open side, drive past,
+               then replan from there with the obstacle marked on the grid
+            -> stops for: stale pose, excessive tilt, stuck avoiding too long
             -> logs each run (planned + measured energy, climb, descent) to CSV.
 
 Planning/control logic lives in nav_core.py (pure Python 3.6, unit-tested).
@@ -56,6 +58,17 @@ class QuantumNavNode(object):
         self.max_tilt = math.radians(float(p("~max_tilt_deg", 20.0)))
         self.pitch_sign = float(p("~pitch_sign", 1.0))
         self.replan_after = float(p("~replan_after", 3.0))
+        # obstacle avoidance (see nav_core.ObstacleAvoider); off -> old stop-and-wait
+        self.avoid_obstacles = bool(p("~avoid_obstacles", True))
+        self.avoid_params = dict(
+            stop_distance=float(p("~avoid_stop_distance", 0.40)),
+            clear_distance=float(p("~avoid_clear_distance", 0.60)),
+            backup_distance=float(p("~avoid_backup_distance", 0.22)),
+            commit_distance=float(p("~avoid_commit_distance", 0.40)),
+            rear_clearance=float(p("~avoid_rear_clearance", 0.25)),
+        )
+        self.replan_after_detour = bool(p("~replan_after_detour", True))
+        self.avoid_timeout = float(p("~avoid_timeout", 25.0))
         self.rate_hz = float(p("~rate", 10.0))
         self.log_csv = os.path.expanduser(p("~log_csv", "~/.ros/quantum_nav_runs.csv"))
         self.frame_id = p("~frame_id", "map")
@@ -85,6 +98,10 @@ class QuantumNavNode(object):
         self.active = None        # PlanResult being driven
         self.all_results = {}
         self.blocked_since = None
+        self.avoider = None
+        self.avoiding_since = None
+        self._last_index = 0
+        self.legs = []            # endpoints still to visit after the current goal
         self.last_cmd = (0.0, 0.0)
         self.status = "idle"
 
@@ -108,7 +125,15 @@ class QuantumNavNode(object):
         rospy.Subscriber(p("~goal_topic", "/move_base_simple/goal"), PoseStamped, self._on_goal, queue_size=1)
 
         if rospy.has_param("~goal_x") and rospy.has_param("~goal_y"):
-            self.goal = (float(p("~goal_x")), float(p("~goal_y")))
+            goal = (float(p("~goal_x")), float(p("~goal_y")))
+            if rospy.has_param("~start_x") and rospy.has_param("~start_y"):
+                # drive to the start endpoint first, then on to the goal
+                start = (float(p("~start_x")), float(p("~start_y")))
+                self.goal, self.legs = start, [goal]
+                rospy.loginfo("Mission: start (%.2f, %.2f) -> goal (%.2f, %.2f)",
+                              start[0], start[1], goal[0], goal[1])
+            else:
+                self.goal = goal
             self.new_goal = True
 
         rospy.on_shutdown(self._stop_hard)
@@ -150,6 +175,7 @@ class QuantumNavNode(object):
     def _on_goal(self, msg):
         with self.lock:
             self.goal = (msg.pose.position.x, msg.pose.position.y)
+            self.legs = []  # an RViz goal replaces any start->goal mission
             self.new_goal = True
         rospy.loginfo("New goal (%.2f, %.2f)", self.goal[0], self.goal[1])
 
@@ -256,6 +282,10 @@ class QuantumNavNode(object):
         rospy.loginfo("Driving %s path (%d waypoints)", best.algorithm, len(waypoints))
         self.meter.reset()
         self.blocked_since = None
+        self.avoider = nav_core.ObstacleAvoider(
+            max_linear=self.max_linear, max_angular=self.max_angular, **self.avoid_params)
+        self.avoiding_since = None
+        self._last_index = 0
         return True
 
     # ── run log ───────────────────────────────────────────────────────────────
@@ -329,35 +359,100 @@ class QuantumNavNode(object):
             self.follower = None
             return "ABORTED: tilt %.0f deg exceeds limit" % math.degrees(max(abs(roll), abs(pitch)))
 
-        # safety: obstacle ahead (LiDAR front sector, sonar)
-        front = self._front_clearance(scan) if scan is not None else float("inf")
-        sonar_hit = sonar is not None and 0 < sonar < self.sonar_stop_cm
-        if front < self.lidar_stop or sonar_hit:
-            self._publish_cmd(0.0, 0.0)
-            now = time.time()
-            if self.blocked_since is None:
-                self.blocked_since = now
-            elif now - self.blocked_since > self.replan_after:
-                rospy.logwarn("Blocked for %.0fs — replanning around the obstacle", self.replan_after)
-                self.blocked_since = None
-                if not self._plan(pose, goal):
-                    self.follower = None
-                    return "no path around obstacle"
-            return "paused: obstacle %s" % ("sonar %.0f cm" % sonar if sonar_hit else "lidar %.2f m" % front)
-        self.blocked_since = None
+        # obstacle ahead (LiDAR front sector, sonar)
+        sonar_m = sonar / 100.0 if sonar is not None and sonar > 0 else float("inf")
+        if self.avoid_obstacles:
+            status = self._avoid(pose, goal, scan, sonar_m, pitch, dt)
+        else:
+            status = self._stop_and_wait(pose, goal, scan, sonar_m)
+        if status is not None:
+            return status
 
         cap = nav_core.uphill_speed_cap(self.max_linear, pitch)
         linear, angular, finished = self.follower.step(pose[0], pose[1], pose[2], max_linear=cap)
+        if self.follower.index != self._last_index:
+            self._last_index = self.follower.index
+            self.avoider.reset_side()
         if finished:
             self._publish_cmd(0.0, 0.0)
             self._log_run("reached")
-            rospy.loginfo("Goal reached: measured %.1f J over %.2f m (climb %.2f m, descent %.2f m)",
-                          self.meter.joules, self.meter.distance, self.meter.climb, self.meter.descent)
+            rospy.loginfo("Reached (%.2f, %.2f): measured %.1f J over %.2f m (climb %.2f m, descent %.2f m)",
+                          goal[0], goal[1], self.meter.joules, self.meter.distance,
+                          self.meter.climb, self.meter.descent)
+            with self.lock:
+                if self.legs and not self.new_goal:
+                    self.goal = self.legs.pop(0)
+                    self.new_goal = True
+                    rospy.loginfo("Start endpoint reached; heading for goal (%.2f, %.2f)",
+                                  self.goal[0], self.goal[1])
+                    return "start reached"
             return "goal reached"
         self._publish_cmd(linear, angular)
         self.meter.update(linear, angular, pitch, dt)
         return "driving %s (waypoint %d/%d)" % (self.active.algorithm, self.follower.index + 1,
                                                 len(self.follower.waypoints))
+
+
+    # ── obstacles ─────────────────────────────────────────────────────────────
+    def _avoid(self, pose, goal, scan, sonar_m, pitch, dt):
+        """Steer round an obstacle. Returns a status while avoiding, None to follow the path."""
+        if scan is not None:
+            sectors = nav_core.scan_sectors(scan.ranges, scan.angle_min, scan.angle_increment,
+                                            scan.range_max, scan.range_min, self.laser_yaw_offset)
+        else:
+            sectors = nav_core.ScanSectors(float("inf"), float("inf"), float("inf"))
+        sectors.front = min(sectors.front, sonar_m)  # the sonar looks straight ahead
+
+        was_detouring = self.avoider.active
+        command, detour_done = self.avoider.update(sectors, pose[0], pose[1])
+        if command is not None:
+            now = time.time()
+            if self.avoiding_since is None:
+                self.avoiding_since = now
+            if self.avoider.active and not was_detouring:
+                rospy.logwarn("Obstacle %.2f m ahead at (%.2f, %.2f): turning %s to go round it",
+                              sectors.front, pose[0], pose[1],
+                              "left" if self.avoider.side == 1 else "right")
+            if now - self.avoiding_since > self.avoid_timeout:
+                self._publish_cmd(0.0, 0.0)
+                self._log_run("aborted_stuck")
+                self.follower = None
+                rospy.logerr("Could not get round the obstacle in %.0fs; stopping", self.avoid_timeout)
+                return "ABORTED: stuck at obstacle"
+            self._publish_cmd(command[0], command[1])
+            self.meter.update(command[0], command[1], pitch, dt)
+            if not self.avoider.active:
+                return "veering away from a close side"
+            return "avoiding obstacle (%s)" % self.avoider.state
+
+        self.avoiding_since = None
+        if detour_done:
+            if self.replan_after_detour:
+                rospy.loginfo("Past the obstacle; replanning from (%.2f, %.2f)", pose[0], pose[1])
+                if self._plan(pose, goal):
+                    return "replanned after obstacle"
+                rospy.logwarn("Replan failed; rejoining the old path")
+            self.follower.retarget_nearest(pose[0], pose[1])
+        return None
+
+    def _stop_and_wait(self, pose, goal, scan, sonar_m):
+        """Old behaviour (avoid_obstacles:=false): stop, and replan if blocked too long."""
+        front = self._front_clearance(scan) if scan is not None else float("inf")
+        sonar_hit = sonar_m * 100.0 < self.sonar_stop_cm
+        if not (front < self.lidar_stop or sonar_hit):
+            self.blocked_since = None
+            return None
+        self._publish_cmd(0.0, 0.0)
+        now = time.time()
+        if self.blocked_since is None:
+            self.blocked_since = now
+        elif now - self.blocked_since > self.replan_after:
+            rospy.logwarn("Blocked for %.0fs — replanning around the obstacle", self.replan_after)
+            self.blocked_since = None
+            if not self._plan(pose, goal):
+                self.follower = None
+                return "no path around obstacle"
+        return "paused: obstacle %s" % ("sonar %.0f cm" % (sonar_m * 100) if sonar_hit else "lidar %.2f m" % front)
 
 
 if __name__ == "__main__":

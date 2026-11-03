@@ -2,9 +2,11 @@
 """
 Phase 9: Path Executor Node.
 
-Subscribes to a path topic (/path/quantum or /path/classical) and odometry (/odom),
-and publishes velocity commands (/cmd_vel) to drive the lunar rover along the sequence
-of waypoints using a smooth proportional waypoint-following controller.
+Subscribes to a path topic (/path/quantum or /path/classical), odometry (/odom)
+and the lidar (/scan), and publishes velocity commands (/cmd_vel) to drive the lunar
+rover along the sequence of waypoints using a smooth proportional waypoint-following
+controller. When the lidar sees an obstacle ahead the rover turns away towards the
+more open side, drives past it, then re-aims at the path.
 
 The control law lives in navigation_pkg.path_following (pure Python, unit-tested);
 this node only wires it to ROS.
@@ -13,6 +15,7 @@ this node only wires it to ROS.
 import rclpy
 from geometry_msgs.msg import Twist
 from nav_msgs.msg import Odometry, Path
+from sensor_msgs.msg import LaserScan
 from rclpy.node import Node
 from rclpy.qos import (
     DurabilityPolicy,
@@ -25,8 +28,14 @@ from navigation_pkg.path_following import (
     DEFAULT_GOAL_TOLERANCE,
     DEFAULT_MAX_ANGULAR,
     DEFAULT_MAX_LINEAR,
+    DEFAULT_BACKUP_DISTANCE,
+    DEFAULT_CLEAR_DISTANCE,
+    DEFAULT_COMMIT_DISTANCE,
+    DEFAULT_STOP_DISTANCE,
     DEFAULT_WAYPOINT_TOLERANCE,
+    ObstacleAvoider,
     WaypointFollower,
+    scan_sectors,
     yaw_from_quaternion,
 )
 
@@ -51,10 +60,20 @@ class PathExecutorNode(Node):
         self.declare_parameter("waypoint_tolerance", DEFAULT_WAYPOINT_TOLERANCE)
         self.declare_parameter("max_linear", DEFAULT_MAX_LINEAR)
         self.declare_parameter("max_angular", DEFAULT_MAX_ANGULAR)
+        self.declare_parameter("scan_topic", "/scan")
+        self.declare_parameter("avoid_obstacles", True)
+        self.declare_parameter("stop_distance", DEFAULT_STOP_DISTANCE)
+        self.declare_parameter("clear_distance", DEFAULT_CLEAR_DISTANCE)
+        self.declare_parameter("backup_distance", DEFAULT_BACKUP_DISTANCE)
+        self.declare_parameter("commit_distance", DEFAULT_COMMIT_DISTANCE)
+        # A scan older than this is ignored (lidar dropped out).
+        self.declare_parameter("scan_timeout", 0.5)
 
         self.path_topic = str(self.get_parameter("path_topic").value)
         odom_topic = str(self.get_parameter("odom_topic").value)
         cmd_vel_topic = str(self.get_parameter("cmd_vel_topic").value)
+        scan_topic = str(self.get_parameter("scan_topic").value)
+        self.avoid_obstacles = bool(self.get_parameter("avoid_obstacles").value)
 
         self.path_sub = self.create_subscription(
             Path,
@@ -67,6 +86,13 @@ class PathExecutorNode(Node):
             Odometry,
             odom_topic,
             self._on_odom,
+            qos_profile_sensor_data,
+        )
+
+        self.scan_sub = self.create_subscription(
+            LaserScan,
+            scan_topic,
+            self._on_scan,
             qos_profile_sensor_data,
         )
 
@@ -84,9 +110,13 @@ class PathExecutorNode(Node):
 
         self.have_odom = False
         self.follower = None
+        self.scan = None
+        self.scan_time = None
+        self.was_avoiding = False
 
         self.get_logger().info(
-            f"Path executor started. Listening on {self.path_topic} and {odom_topic}..."
+            f"Path executor started. Listening on {self.path_topic}, {odom_topic} "
+            f"and {scan_topic} (obstacle avoidance {'on' if self.avoid_obstacles else 'off'})..."
         )
 
     def _on_path(self, msg: Path):
@@ -104,6 +134,14 @@ class PathExecutorNode(Node):
             waypoint_tolerance=float(self.get_parameter("waypoint_tolerance").value),
             max_linear=float(self.get_parameter("max_linear").value),
             max_angular=float(self.get_parameter("max_angular").value),
+            avoider=ObstacleAvoider(
+                stop_distance=float(self.get_parameter("stop_distance").value),
+                clear_distance=float(self.get_parameter("clear_distance").value),
+                backup_distance=float(self.get_parameter("backup_distance").value),
+                commit_distance=float(self.get_parameter("commit_distance").value),
+                max_linear=float(self.get_parameter("max_linear").value),
+                max_angular=float(self.get_parameter("max_angular").value),
+            ),
         )
 
         self.get_logger().info(
@@ -123,6 +161,20 @@ class PathExecutorNode(Node):
                 f"/odom received: rover initial pose = ({self.x:.2f}, {self.y:.2f})"
             )
 
+    def _on_scan(self, msg: LaserScan):
+        self.scan = scan_sectors(
+            msg.ranges, msg.angle_min, msg.angle_increment, msg.range_max, msg.range_min
+        )
+        self.scan_time = self.get_clock().now()
+
+    def _fresh_scan(self):
+        if not self.avoid_obstacles or self.scan is None:
+            return None
+        age = (self.get_clock().now() - self.scan_time).nanoseconds * 1e-9
+        if age > float(self.get_parameter("scan_timeout").value):
+            return None
+        return self.scan
+
     def _control_loop(self):
         twist = Twist()
 
@@ -130,7 +182,21 @@ class PathExecutorNode(Node):
             self.cmd_pub.publish(twist)
             return
 
-        result = self.follower.step(self.x, self.y, self.yaw)
+        scan = self._fresh_scan()
+        result = self.follower.step(self.x, self.y, self.yaw, scan)
+
+        if result.avoiding and not self.was_avoiding:
+            side = "left" if self.follower.avoider.side == 1 else "right"
+            self.get_logger().warn(
+                f"Obstacle {scan.front:.2f} m ahead at ({self.x:.2f}, {self.y:.2f}); "
+                f"turning {side} to go round it."
+            )
+        elif self.was_avoiding and not result.avoiding:
+            self.get_logger().info(
+                f"Clear of obstacle; resuming path at waypoint "
+                f"{self.follower.index + 1}/{len(self.follower.waypoints)}."
+            )
+        self.was_avoiding = result.avoiding
 
         if result.reached_index is not None:
             gx, gy = self.follower.waypoints[result.reached_index]

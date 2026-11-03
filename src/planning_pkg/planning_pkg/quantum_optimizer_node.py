@@ -10,7 +10,7 @@ from nav_msgs.msg import Odometry, Path
 from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
-from planning_pkg.graph_model import load_graph, resolve_node
+from planning_pkg.graph_model import endpoint_path, load_graph, resolve_node
 from planning_pkg.quantum_optimizer import (
     describe_qaoa_alone,
     run_qaoa,
@@ -65,6 +65,7 @@ class QuantumOptimizerNode(Node):
         self.start_x = float("nan")
         self.start_y = float("nan")
         self.planning_started = False
+        self.explicit_start = False
 
         self.get_logger().info(
             "Quantum optimizer started. Waiting for /odom..."
@@ -74,13 +75,24 @@ class QuantumOptimizerNode(Node):
         if self.planning_started:
             return
 
-        self.start_x = msg.pose.pose.position.x
-        self.start_y = msg.pose.pose.position.y
-
-        self.get_logger().info(
-            f"Received rover position from /odom: "
-            f"({self.start_x:.3f}, {self.start_y:.3f})"
-        )
+        sx = float(self.get_parameter("start_x").value)
+        sy = float(self.get_parameter("start_y").value)
+        # An explicit start endpoint wins; otherwise plan from where the rover is.
+        self.explicit_start = not (math.isnan(sx) or math.isnan(sy))
+        if self.explicit_start:
+            self.start_x, self.start_y = sx, sy
+            self.get_logger().info(
+                f"Using start endpoint ({sx:.3f}, {sy:.3f}); rover is at "
+                f"({msg.pose.pose.position.x:.3f}, {msg.pose.pose.position.y:.3f}) "
+                f"and will drive to the start first."
+            )
+        else:
+            self.start_x = msg.pose.pose.position.x
+            self.start_y = msg.pose.pose.position.y
+            self.get_logger().info(
+                f"Received rover position from /odom: "
+                f"({self.start_x:.3f}, {self.start_y:.3f})"
+            )
 
         self.planning_started = True
         self._run()
@@ -180,9 +192,14 @@ class QuantumOptimizerNode(Node):
                     f"{saved['latest']}"
                 )
 
+            coords = endpoint_path(
+                quantum.path_coords,
+                (self.start_x, self.start_y) if self.explicit_start else None,
+                (gx, gy),
+            )
             self.path_pub.publish(
                 self._build_path(
-                    quantum.path_coords,
+                    coords,
                     frame_id,
                 )
             )

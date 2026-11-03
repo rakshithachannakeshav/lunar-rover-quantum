@@ -170,3 +170,113 @@ def test_robot_scripts_avoid_python37_only_features(name):
             assert "dataclasses" not in [a.name for a in node.names], name
         assert type(node).__name__ != "NamedExpr", name  # walrus is 3.8+
     assert "breakpoint(" not in src
+
+
+# ── obstacle avoidance ────────────────────────────────────────────────────────
+N_BEAMS = 360
+INC = 2 * math.pi / N_BEAMS
+
+
+def _cast(x, y, yaw, rocks):
+    """360-beam scan (angle_min=-pi) of circular rocks [(cx, cy, r)] from pose (x, y, yaw)."""
+    ranges = []
+    for i in range(N_BEAMS):
+        a = yaw - math.pi + i * INC
+        dx, dy = math.cos(a), math.sin(a)
+        best = float('inf')
+        for cx, cy, rad in rocks:
+            fx, fy = x - cx, y - cy
+            b = fx * dx + fy * dy
+            disc = b * b - (fx * fx + fy * fy - rad * rad)
+            if disc >= 0 and -b - math.sqrt(disc) > 0:
+                best = min(best, -b - math.sqrt(disc))
+        ranges.append(best)
+    return ranges
+
+
+def test_scan_sectors_front_sides_rear_and_yaw_offset():
+    ranges = [float('inf')] * N_BEAMS
+    ranges[180] = 0.5           # straight ahead (angle 0)
+    ranges[0] = 0.3             # straight behind
+    ranges[180 + 60] = 0.4      # 60 deg left
+    s = nav_core.scan_sectors(ranges, -math.pi, INC, 12.0)
+    assert s.front == pytest.approx(0.5) and s.rear == pytest.approx(0.3)
+    assert s.left < s.right
+    # lidar mounted backwards: what it calls 0 deg is really behind the robot
+    flipped = nav_core.scan_sectors(ranges, -math.pi, INC, 12.0, yaw_offset=math.pi)
+    assert flipped.front == pytest.approx(0.3) and flipped.rear == pytest.approx(0.5)
+
+
+def test_scan_sectors_drops_self_hits_and_nan():
+    ranges = [float('nan')] * N_BEAMS
+    ranges[180] = 0.05
+    s = nav_core.scan_sectors(ranges, -math.pi, INC, 12.0)
+    assert s.front == pytest.approx(12.0)
+
+
+def test_avoider_turns_to_the_open_side():
+    av = nav_core.ObstacleAvoider()
+    cmd, _ = av.update(nav_core.ScanSectors(0.3, 3.0, 0.5), 0, 0)
+    assert cmd[0] == 0.0 and cmd[1] > 0          # left is open
+    av = nav_core.ObstacleAvoider()
+    cmd, _ = av.update(nav_core.ScanSectors(0.3, 0.5, 3.0), 0, 0)
+    assert cmd[0] == 0.0 and cmd[1] < 0          # right is open
+
+
+def test_avoider_only_reverses_when_the_rear_is_clear():
+    av = nav_core.ObstacleAvoider()
+    cmd, _ = av.update(nav_core.ScanSectors(0.15, 2.0, 2.0, rear=2.0), 0, 0)
+    assert cmd[0] < 0.0
+    av = nav_core.ObstacleAvoider()
+    cmd, _ = av.update(nav_core.ScanSectors(0.15, 2.0, 2.0, rear=0.1), 0, 0)
+    assert cmd[0] == 0.0 and cmd[1] != 0.0        # wall behind: turn in place instead
+
+
+def test_flank_guard_veers_away_from_a_close_side():
+    av = nav_core.ObstacleAvoider()
+    cmd, _ = av.update(nav_core.ScanSectors(5.0, 2.0, 2.0, left_near=0.25), 0, 0)
+    assert cmd[0] > 0.0 and cmd[1] < 0.0          # keep going, veer right
+    assert not av.active                           # not a full detour
+    cmd, _ = av.update(nav_core.ScanSectors(5.0, 2.0, 2.0), 0, 0)
+    assert cmd is None
+
+
+def test_retarget_nearest_never_goes_backwards():
+    f = nav_core.WaypointFollower([(0, 0), (1, 0), (2, 0), (3, 0)])
+    f.index = 2
+    f.retarget_nearest(0.0, 0.0)
+    assert f.index == 2
+    f.retarget_nearest(3.1, 0.0)
+    assert f.index == 3
+
+
+def test_closed_loop_goes_round_a_rock_and_reaches_the_goal():
+    rock = (1.0, 0.03, 0.15)
+    goal = (2.0, 0.0)
+    f = nav_core.WaypointFollower([(0.5, 0.0), (1.0, 0.0), (1.5, 0.0), goal],
+                                  max_linear=0.12, max_angular=0.6)
+    av = nav_core.ObstacleAvoider(max_linear=0.12, max_angular=0.6)
+    x, y, yaw, dt = 0.0, 0.0, 0.0, 0.1
+    closest, avoided, last = float('inf'), False, 0
+    for _ in range(6000):
+        s = nav_core.scan_sectors(_cast(x, y, yaw, [rock]), -math.pi, INC, 12.0)
+        cmd, done = av.update(s, x, y)
+        if cmd is None:
+            if done:
+                f.retarget_nearest(x, y)
+            lin, ang, finished = f.step(x, y, yaw)
+            if f.index != last:
+                last = f.index
+                av.reset_side()
+            if finished:
+                break
+        else:
+            avoided = True
+            lin, ang = cmd
+        x += lin * math.cos(yaw) * dt
+        y += lin * math.sin(yaw) * dt
+        yaw = nav_core.wrap_angle(yaw + ang * dt)
+        closest = min(closest, math.hypot(x - rock[0], y - rock[1]) - rock[2])
+    assert f.done and avoided
+    assert closest > 0.22                       # robot radius is 0.2 m: never touched the rock
+    assert math.hypot(x - goal[0], y - goal[1]) <= 0.15

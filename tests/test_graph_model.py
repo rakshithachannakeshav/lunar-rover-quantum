@@ -249,3 +249,16 @@ def test_cli_main_writes_graph_files(tmp_path):
         meta = json.load(f)
     assert meta['node_count'] == 4  # 4x4 grid / stride 2 -> 2x2 blocks, all flat
     assert meta['cell_stride'] == 2
+
+
+def test_endpoint_path_ends_on_the_exact_goal():
+    from planning_pkg.graph_model import endpoint_path
+    nodes = [(0.125, 0.125), (0.375, 0.375), (1.375, 1.375)]
+    out = endpoint_path(nodes, None, (1.5, 1.5))
+    assert out[:3] == nodes and out[-1] == (1.5, 1.5)
+
+
+def test_endpoint_path_prepends_an_explicit_start():
+    from planning_pkg.graph_model import endpoint_path
+    out = endpoint_path([(0.125, 0.125), (1.5, 1.5)], (-1.0, 0.0), (1.5, 1.5))
+    assert out == [(-1.0, 0.0), (0.125, 0.125), (1.5, 1.5)]  # goal already exact: not duplicated
