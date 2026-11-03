@@ -9,6 +9,7 @@
     roslaunch arjuna_quantum_nav quantum_nav.launch algorithm:=astar max_linear:=0.10
 
   Send a goal with RViz "2D Nav Goal", or pass goal_x:=1.0 goal_y:=0.0 to start at once.
+  Add start_x:= start_y:= to drive to a start endpoint first, then on to the goal.
 -->
 <launch>
   <arg name="algorithm" default="auto"/>          <!-- auto | astar | dijkstra | qaoa -->
@@ -25,6 +26,10 @@
   <arg name="elevation_origin_y" default="0.0"/>
   <arg name="goal_x" default=""/>
   <arg name="goal_y" default=""/>
+  <arg name="start_x" default=""/>                <!-- optional start endpoint (needs goal) -->
+  <arg name="start_y" default=""/>
+  <arg name="avoid_obstacles" default="true"/>    <!-- false: old stop-and-wait -->
+  <arg name="avoid_stop_distance" default="0.40"/> <!-- m: obstacle this close ahead -> avoid -->
 
   <node pkg="arjuna_quantum_nav" type="quantum_nav_node.py" name="quantum_nav" output="screen">
     <param name="algorithm" value="$(arg algorithm)"/>
@@ -41,6 +46,8 @@
     <param name="elevation_origin_y" value="$(arg elevation_origin_y)"/>
     <param name="goal_x" value="$(arg goal_x)" if="$(eval arg('goal_x') != '')"/>
     <param name="goal_y" value="$(arg goal_y)" if="$(eval arg('goal_y') != '')"/>
+    <param name="start_x" value="$(arg start_x)" if="$(eval arg('start_x') != '')"/>
+    <param name="start_y" value="$(arg start_y)" if="$(eval arg('start_y') != '')"/>
 
     <!-- kit topics (from the Arjuna curriculum) -->
     <param name="pose_topic" value="/robot_pose_ekf/odom_combined"/>
@@ -58,5 +65,15 @@
     <param name="max_tilt_deg" value="20.0"/>
     <param name="pose_timeout" value="0.6"/>
     <param name="replan_after" value="3.0"/>
+
+    <!-- obstacle avoidance: turn to the open side, drive past, replan -->
+    <param name="avoid_obstacles" value="$(arg avoid_obstacles)"/>
+    <param name="avoid_stop_distance" value="$(arg avoid_stop_distance)"/>
+    <param name="avoid_clear_distance" value="0.60"/>
+    <param name="avoid_backup_distance" value="0.22"/>
+    <param name="avoid_commit_distance" value="0.40"/>
+    <param name="avoid_rear_clearance" value="0.25"/>
+    <param name="replan_after_detour" value="true"/>
+    <param name="avoid_timeout" value="25.0"/>
   </node>
 </launch>
