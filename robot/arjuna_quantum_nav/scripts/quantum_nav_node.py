@@ -69,6 +69,12 @@ class QuantumNavNode(object):
         )
         self.replan_after_detour = bool(p("~replan_after_detour", True))
         self.avoid_timeout = float(p("~avoid_timeout", 25.0))
+        self.side_clearance = float(p("~avoid_side_clearance", 0.32))
+        self.avoid_params["side_clearance"] = self.side_clearance
+        self.watchdog = nav_core.ProgressWatchdog(
+            travel=float(p("~no_progress_travel", 3.0)))
+        self.max_stuck_replans = int(p("~max_stuck_replans", 3))
+        self.stuck_replans = 0
         self.rate_hz = float(p("~rate", 10.0))
         self.log_csv = os.path.expanduser(p("~log_csv", "~/.ros/quantum_nav_runs.csv"))
         self.frame_id = p("~frame_id", "map")
@@ -286,6 +292,7 @@ class QuantumNavNode(object):
             max_linear=self.max_linear, max_angular=self.max_angular, **self.avoid_params)
         self.avoiding_since = None
         self._last_index = 0
+        self.watchdog.reset()
         return True
 
     # ── run log ───────────────────────────────────────────────────────────────
@@ -344,6 +351,7 @@ class QuantumNavNode(object):
                 return "waiting for /map"
             if self.follower is not None and not self.follower.done:
                 self._log_run("preempted")
+            self.stuck_replans = 0
             if not self._plan(pose, goal):
                 self.follower = None
                 return "no path"
@@ -367,6 +375,22 @@ class QuantumNavNode(object):
             status = self._stop_and_wait(pose, goal, scan, sonar_m)
         if status is not None:
             return status
+
+        # progress watchdog: going nowhere (circling / sliding along an obstacle)
+        if self.watchdog.update(pose[0], pose[1], self.follower.waypoints[self.follower.index]):
+            self.stuck_replans += 1
+            if self.stuck_replans > self.max_stuck_replans:
+                self._publish_cmd(0.0, 0.0)
+                self._log_run("aborted_no_progress")
+                self.follower = None
+                rospy.logerr("No progress after %d replans; stopping", self.max_stuck_replans)
+                return "ABORTED: no progress towards the goal"
+            rospy.logwarn("No progress towards waypoint %d; replanning (%d/%d)",
+                          self.follower.index + 1, self.stuck_replans, self.max_stuck_replans)
+            if not self._plan(pose, goal):
+                self.follower = None
+                return "no path"
+            return "replanned: no progress"
 
         cap = nav_core.uphill_speed_cap(self.max_linear, pitch)
         linear, angular, finished = self.follower.step(pose[0], pose[1], pose[2], max_linear=cap)

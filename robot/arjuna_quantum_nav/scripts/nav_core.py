@@ -680,6 +680,35 @@ class ObstacleAvoider(object):
         return None, True
 
 
+class ProgressWatchdog(object):
+    """True once the robot has driven `travel` metres without getting `step` metres
+    closer to its current target: circling an obstacle or sliding along a wall.
+    The avoider's own timer misses this, because the robot keeps switching between
+    following the path and veering away, so no single avoidance lasts long."""
+
+    def __init__(self, travel=3.0, step=0.15):
+        self.travel_limit = travel
+        self.step = step
+        self.reset()
+
+    def reset(self):
+        self.target = None
+        self.best = float("inf")
+        self.travel = 0.0
+        self.last = None
+
+    def update(self, x, y, target):
+        if self.last is not None:
+            self.travel += math.hypot(x - self.last[0], y - self.last[1])
+        self.last = (x, y)
+        d = math.hypot(target[0] - x, target[1] - y)
+        if target != self.target:
+            self.target, self.best, self.travel = target, d, 0.0
+        elif d < self.best - self.step:
+            self.best, self.travel = d, 0.0
+        return self.travel > self.travel_limit
+
+
 def uphill_speed_cap(max_linear, pitch_rad):
     """Slow down when climbing, like the web sim (descending does not speed up)."""
     grade = math.tan(pitch_rad)
