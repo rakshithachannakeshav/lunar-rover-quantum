@@ -567,10 +567,14 @@
     }
   }
 
-  // ── QAOA quantum-inspired path optimisation ─────────────────────────────────
-  // Mirrors quantum_optimizer.py: build a quantum corridor from the A* backbone,
-  // generate segment alternatives, construct a QUBO, simulate QAOA probability
-  // distribution, and decode the lowest-energy feasible path.
+  // ── QAOA path planning: real QAOA simulation (js/qaoa.js) ───────────────────
+  // Mirrors quantum_optimizer.py with no A*, no Dijkstra and no classical
+  // fallback: the corridor is a geometric lattice of anchors joined by straight
+  // walks, the route choice is an edge-selection QUBO, the circuit is simulated
+  // exactly (statevector), and the answer is the valid path QAOA sampled most
+  // often. If no shot is a valid path, QAOA reports "no path".
+  var QAOA_REPS = 2;       // circuit depth p
+  var QAOA_SHOTS = 2048;
   var qaoaState = {
     running: false,
     progress: 0,        // 0-100
@@ -580,269 +584,41 @@
     reps: 0,
     expectation: 0,
     validSamples: 0,
-    corridorEdges: 0
+    randomValidSamples: 0,
+    selectedCount: 0,
+    corridorEdges: 0,
+    error: null
   };
 
-  // Generate an alternative A* path with perturbed costs (simulates corridor)
-  function astarPathPerturbed(startX, startZ, goalX, goalZ, seed) {
-    var s = worldToGrid(startX, startZ);
-    var g = worldToGrid(goalX, goalZ);
-    var gridSize = Math.round((GRID_MAX - GRID_MIN) / GRID_RES);
-
-    if (isBlocked(g.gx, g.gz)) {
-      var found = false;
-      for (var r = 1; r <= 6 && !found; r++) {
-        for (var ddx = -r; ddx <= r && !found; ddx++) {
-          for (var ddz = -r; ddz <= r && !found; ddz++) {
-            if (Math.abs(ddx) === r || Math.abs(ddz) === r) {
-              if (!isBlocked(g.gx + ddx, g.gz + ddz)) {
-                g.gx += ddx; g.gz += ddz; found = true;
-              }
-            }
-          }
-        }
-      }
-    }
-
-    var dirs = [[1,0],[0,1],[-1,0],[0,-1],[1,1],[1,-1],[-1,1],[-1,-1]];
-    var open = {}, closed = {}, heap = new MinHeap();
-    var startKey = gridKey(s.gx, s.gz);
-    var goalKey = gridKey(g.gx, g.gz);
-
-    function heuristic(ax, az) {
-      var dx = ax - g.gx, dz = az - g.gz;
-      return Math.sqrt(dx * dx + dz * dz) * GRID_RES * MIN_GRADE_FACTOR;
-    }
-    // simple seeded PRNG for cost perturbation
-    function noise(x, z) {
-      var v = Math.sin(x * 127.1 + z * 311.7 + seed * 43758.5453) * 43758.5453;
-      return (v - Math.floor(v)) * 0.3;
-    }
-
-    open[startKey] = { gx: s.gx, gz: s.gz, f: heuristic(s.gx, s.gz), g: 0, parent: null };
-
-    heap.push(startKey, open[startKey].f);
-    var iterations = 0, maxIter = gridSize * gridSize;
-
-    while (true) {
-      var bestKey = popOpen(heap, open);
-      if (bestKey === null || iterations++ > maxIter) return null;
-
-      var current = open[bestKey];
-      delete open[bestKey];
-      closed[bestKey] = current;
-
-      if (bestKey === goalKey) {
-        var path = [];
-        var node = current;
-        while (node) { var w = gridToWorld(node.gx, node.gz); path.unshift([w.wx, w.wz]); node = node.parent; }
-        path.expanded = iterations;
-        return path;
-      }
-
-      for (var d = 0; d < dirs.length; d++) {
-        var ngx = current.gx + dirs[d][0], ngz = current.gz + dirs[d][1];
-        if (ngx < 0 || ngx >= gridSize || ngz < 0 || ngz >= gridSize) continue;
-        var nk = gridKey(ngx, ngz);
-        if (closed[nk] || isBlocked(ngx, ngz)) continue;
-
-        var cw = gridToWorld(current.gx, current.gz);
-        var nw = gridToWorld(ngx, ngz);
-        var baseCost = edgeCost(cw.wx, cw.wz, nw.wx, nw.wz);
-        if (baseCost === Infinity) continue;
-        // add terrain-roughness perturbation (simulates alternative terrain scoring)
-        var moveCost = baseCost * (1.0 + noise(ngx, ngz));
-        var tentG = current.g + moveCost;
-        if (open[nk] && open[nk].g <= tentG) continue;
-        open[nk] = { gx: ngx, gz: ngz, f: tentG + heuristic(ngx, ngz), g: tentG, parent: current };
-        heap.push(nk, open[nk].f);
-      }
-    }
-  }
-
-  // QAOA-style path selection: build corridor, evaluate segment alternatives,
-  // simulate QUBO probability distribution, select lowest-energy feasible path
   function qaoaPath(startX, startZ, goalX, goalZ) {
-    var t0 = performance.now();
-
-    // Phase 1: Build A* backbone (like classical_planning.run_astar)
-    qaoaState.phase = "Building A* backbone...";
-    qaoaState.progress = 10;
-    var backbone = astarPath(startX, startZ, goalX, goalZ);
-    if (!backbone) return null;
-    var expanded = backbone.expanded || 0;  // total search effort, all sub-searches
-
-    // Phase 2: Build quantum corridor — generate alternative segments
-    // (mirrors quantum_optimizer.build_quantum_corridor)
-    qaoaState.phase = "Building quantum corridor...";
-    qaoaState.progress = 25;
-
-    var NUM_ANCHORS = Math.min(6, Math.max(3, Math.floor(backbone.length / 8)));
-    var anchorIndices = [0];
-    for (var a = 1; a < NUM_ANCHORS - 1; a++) {
-      anchorIndices.push(Math.round(a * (backbone.length - 1) / (NUM_ANCHORS - 1)));
+    if (typeof QaoaCore === "undefined") {
+      qaoaState.error = "js/qaoa.js is not loaded";
+      qaoaState.running = false;
+      return null;
     }
-    anchorIndices.push(backbone.length - 1);
-
-    // For each segment between anchors, find alternative paths
-    var segments = [];  // each: { baseline: [...], alternatives: [[...], ...] }
-    for (var si = 0; si < anchorIndices.length - 1; si++) {
-      var ai = anchorIndices[si], bi = anchorIndices[si + 1];
-      var segStart = backbone[ai], segEnd = backbone[bi];
-      var baselineSegment = backbone.slice(ai, bi + 1);
-
-      var alts = [];
-      // generate 2-3 alternatives with perturbed costs (like corridor segment candidates)
-      for (var alt = 0; alt < 3; alt++) {
-        var altPath = astarPathPerturbed(segStart[0], segStart[1], segEnd[0], segEnd[1], alt * 17 + si * 7 + 42);
-        if (altPath) expanded += altPath.expanded || 0;
-        if (altPath && altPath.length > 1) {
-          alts.push(altPath);
-        }
-      }
-      segments.push({ baseline: baselineSegment, alternatives: alts });
-    }
-
-    var totalEdges = segments.length + segments.reduce(function(s, seg) { return s + seg.alternatives.length; }, 0);
-    qaoaState.corridorEdges = totalEdges;
-
-    // Phase 3: Build QUBO — edge-selection binary variables
-    // (mirrors quantum_optimizer.build_qubo)
-    qaoaState.phase = "Building QUBO...";
-    qaoaState.progress = 40;
-
-    // Each segment has 1 baseline + N alternative edges = binary variables
-    var numQubits = 0;
-    var edgeList = [];  // { segIdx, edgeIdx, path, energy }
-    for (var si = 0; si < segments.length; si++) {
-      var seg = segments[si];
-      var baseE = computePathEnergy(seg.baseline);
-      edgeList.push({ segIdx: si, edgeIdx: 0, path: seg.baseline, energy: baseE.energy });
-      numQubits++;
-      for (var ai = 0; ai < seg.alternatives.length; ai++) {
-        var altE = computePathEnergy(seg.alternatives[ai]);
-        edgeList.push({ segIdx: si, edgeIdx: ai + 1, path: seg.alternatives[ai], energy: altE.energy });
-        numQubits++;
-      }
-    }
-
-    // add activation qubits for internal anchors (like quantum_optimizer)
-    var activationQubits = Math.max(0, NUM_ANCHORS - 2);
-    numQubits += activationQubits;
-
-    qaoaState.qubits = numQubits;
-    qaoaState.reps = Math.min(3, Math.max(1, Math.ceil(numQubits / 6)));
-
-    // Phase 4: Simulate QAOA — evaluate all feasible bitstrings
-    // (mirrors optimize_qaoa + sampling)
-    qaoaState.phase = "Running QAOA simulation (p=" + qaoaState.reps + ")...";
-    qaoaState.progress = 55;
-    qaoaState.shots = 2048;
-
-    // Enumerate feasible combinations: pick exactly one edge per segment
-    var feasiblePaths = [];
-    var edgesBySegment = [];
-    for (var si = 0; si < segments.length; si++) {
-      var segEdges = edgeList.filter(function(e) { return e.segIdx === si; });
-      edgesBySegment.push(segEdges);
-    }
-
-    // Enumerate all combinations (product of segment choices)
-    function enumerate(segIdx, currentPath, currentEnergy) {
-      if (segIdx >= edgesBySegment.length) {
-        feasiblePaths.push({ path: currentPath.slice(), energy: currentEnergy });
-        return;
-      }
-      var choices = edgesBySegment[segIdx];
-      for (var c = 0; c < choices.length; c++) {
-        var segPath = choices[c].path;
-        // stitch: drop first point of segment (it's the last of previous)
-        var appended = segIdx === 0 ? segPath : segPath.slice(1);
-        enumerate(segIdx + 1, currentPath.concat(appended), currentEnergy + choices[c].energy);
-      }
-    }
-    enumerate(0, [], 0);
-
-    if (feasiblePaths.length === 0) return null;  // no classical fallback
-
-    // Phase 5: QAOA probability model — simulate quantum interference
-    // Each feasible path gets a probability proportional to QAOA amplitudes
-    // |ψ⟩ = Σ α_x |x⟩  where amplitudes are biased toward low-energy states
-    qaoaState.phase = "Decoding measurement outcomes...";
-    qaoaState.progress = 75;
-
-    // Compute QAOA-like probabilities using Boltzmann-style distribution
-    // This mirrors how trained QAOA concentrates probability on low-cost states
-    var energies = feasiblePaths.map(function(fp) { return fp.energy; });
-    var minE = Math.min.apply(null, energies);
-    var maxE = Math.max.apply(null, energies);
-    var range = Math.max(maxE - minE, 0.01);
-
-    // Temperature parameter — lower = more "quantum-optimised" concentration
-    // p layers of QAOA ≈ more concentration on optimal
-    var temperature = range / (2.5 * qaoaState.reps);
-
-    var boltzmannWeights = energies.map(function(e) {
-      return Math.exp(-(e - minE) / Math.max(temperature, 0.001));
+    qaoaState.phase = "Running QAOA simulation (p=" + QAOA_REPS + ")...";
+    var r = QaoaCore.plan({
+      start: [startX, startZ], goal: [goalX, goalZ],
+      gridRes: GRID_RES, gridMin: GRID_MIN, gridMax: GRID_MAX,
+      isBlocked: isBlocked, edgeCost: edgeCost,
+      reps: QAOA_REPS, shots: QAOA_SHOTS, seed: 7
     });
-    var totalWeight = boltzmannWeights.reduce(function(a, b) { return a + b; }, 0);
-    var probs = boltzmannWeights.map(function(w) { return w / totalWeight; });
-
-    // Simulate shots — sample from probability distribution
-    var shotCounts = new Array(feasiblePaths.length).fill(0);
-    // Deterministic sampling based on probabilities
-    var cumProbs = [];
-    var cumSum = 0;
-    for (var i = 0; i < probs.length; i++) {
-      cumSum += probs[i];
-      cumProbs.push(cumSum);
-    }
-
-    // Use a seeded LCG for reproducible "measurement" outcomes
-    var rngState = 12345;
-    function nextRand() {
-      rngState = (rngState * 1103515245 + 12345) & 0x7fffffff;
-      return rngState / 0x7fffffff;
-    }
-
-    var validSamples = 0;
-    for (var shot = 0; shot < qaoaState.shots; shot++) {
-      var r = nextRand();
-      for (var j = 0; j < cumProbs.length; j++) {
-        if (r <= cumProbs[j]) {
-          shotCounts[j]++;
-          validSamples++;
-          break;
-        }
-      }
-    }
-    qaoaState.validSamples = validSamples;
-
-    // Decode the MOST-SAMPLED feasible bitstring, as a real QAOA run does.
-    // (Picking the lowest-energy candidate instead would be classical post-selection.)
-    // Shallow circuits don't always concentrate on the optimum, so this can miss it.
-    var bestIdx = 0;
-    for (var i = 1; i < feasiblePaths.length; i++) {
-      if (shotCounts[i] > shotCounts[bestIdx] ||
-          (shotCounts[i] === shotCounts[bestIdx] && feasiblePaths[i].energy < feasiblePaths[bestIdx].energy)) {
-        bestIdx = i;
-      }
-    }
-
-    // Compute the QAOA expectation value ⟨C⟩ = Σ p_x · C(x)
-    var expectation = 0;
-    for (var i = 0; i < probs.length; i++) {
-      expectation += probs[i] * feasiblePaths[i].energy;
-    }
-    qaoaState.expectation = expectation;
-
-    qaoaState.phase = "Path decoded";
+    var s = r.stats;
+    qaoaState.qubits = s.qubits;
+    qaoaState.shots = s.shots;
+    qaoaState.reps = s.reps;
+    qaoaState.expectation = s.expectation;
+    qaoaState.validSamples = s.validSamples;
+    qaoaState.randomValidSamples = s.randomValidSamples;
+    qaoaState.selectedCount = s.selectedCount;
+    qaoaState.corridorEdges = s.corridorEdges;
+    qaoaState.error = s.error;
+    qaoaState.phase = s.error || "Path decoded";
     qaoaState.progress = 100;
     qaoaState.running = false;
-
-    var chosen = feasiblePaths[bestIdx].path;
-    chosen.expanded = expanded;
-    return chosen;
+    if (!r.path) return null;
+    r.path.expanded = s.walkCells;   // grid cells walked to build the corridor (no search)
+    return r.path;
   }
 
   // ── path visualization ─────────────────────────────────────────────────────
@@ -1147,6 +923,8 @@
         r.reps = qaoaState.reps;
         r.expectation = qaoaState.expectation;
         r.validSamples = qaoaState.validSamples;
+        r.randomValidSamples = qaoaState.randomValidSamples;
+        r.selectedCount = qaoaState.selectedCount;
         r.corridorEdges = qaoaState.corridorEdges;
       }
       out.results[name] = r;
@@ -1281,7 +1059,11 @@
       if (elQSh) elQSh.textContent = qr.shots;
       if (elQRp) elQRp.textContent = "p = " + qr.reps;
       if (elQEx) elQEx.textContent = qr.expectation.toFixed(2) + " J";
-      if (elQVs) elQVs.textContent = qr.validSamples + " / " + qr.shots;
+      if (elQVs) elQVs.textContent = qr.validSamples + " / " + qr.shots + " (random " + qr.randomValidSamples + ")";
+    }
+    if (!qr && elQComp && qaoaState.error) {
+      // QAOA has no classical fallback: say why there is no QAOA path
+      elQComp.innerHTML = '<span class="res-delta">No QAOA path: ' + qaoaState.error + '</span>';
     }
     if (qr && ar && elQComp) {
       var qDelta = qr.energy - ar.energy;
