@@ -255,5 +255,58 @@ def test_closed_loop_drive_goes_round_a_rock_to_the_exact_goal():
 
     assert follower.done
     assert avoided
-    assert closest > 0.15  # never drove into the rock
+    assert closest > 0.45  # rover half-width (panel 0.9 m): never touched the rock
     assert math.hypot(x - goal[0], y - goal[1]) <= DEFAULT_GOAL_TOLERANCE
+
+
+def _drive(rocks, waypoints, seconds=800.0):
+    follower = WaypointFollower(waypoints)
+    x, y, yaw, dt = 0.0, 0.0, 0.0, 0.05
+    closest, skipped = float('inf'), []
+    for _ in range(int(seconds / dt)):
+        result = follower.step(x, y, yaw, _simulated_scan(x, y, yaw, rocks))
+        if result.skipped_index is not None:
+            skipped.append(result.skipped_index)
+        x += result.linear * math.cos(yaw) * dt
+        y += result.linear * math.sin(yaw) * dt
+        yaw = wrap_angle(yaw + result.angular * dt)
+        closest = min([closest] + [math.hypot(x - cx, y - cy) - r for cx, cy, r in rocks])
+        if follower.done:
+            break
+    return follower, (x, y), closest, skipped
+
+
+def test_flank_guard_veers_away_from_a_close_side():
+    avoider = ObstacleAvoider()
+    command, _ = avoider.update(ScanSectors(front=5.0, left=3.0, right=3.0, left_near=0.4), 0.0, 0.0)
+    assert command[0] > 0.0 and command[1] < 0.0   # keep going, veer right
+    assert not avoider.active                       # a veer, not a full detour
+
+
+def test_avoider_does_not_reverse_into_something_behind():
+    avoider = ObstacleAvoider()
+    (lin, ang), _ = avoider.update(ScanSectors(front=0.25, left=2.0, right=2.0, rear=0.5), 0.0, 0.0)
+    assert lin == pytest.approx(0.0) and ang != 0.0  # turns in place instead
+
+
+def test_scan_sectors_reports_rear_and_nearest_flank():
+    ranges = _scan_with([(math.pi, 0.9), (1.0, 0.7), (1.2, 2.0)])
+    s = scan_sectors(ranges, ANGLE_MIN, ANGLE_INC, RANGE_MAX)
+    assert s.rear == pytest.approx(0.9)
+    assert s.left_near == pytest.approx(0.7)
+
+
+def test_waypoint_behind_a_wall_is_skipped_and_the_goal_reached():
+    wall = [(3.0, k / 10.0, 0.1) for k in range(-8, 9, 2)]   # 1.7 m wall over waypoint (3, 0)
+    follower, (x, y), closest, skipped = _drive(wall, [(1.0 * i, 0.0) for i in range(1, 7)])
+    assert follower.done and not follower.stuck
+    assert skipped == [2]
+    assert math.hypot(x - 6.0, y) <= DEFAULT_GOAL_TOLERANCE
+    assert closest > 0.45
+
+
+def test_goal_inside_an_obstacle_gives_up_instead_of_circling():
+    rock = [(6.0, 0.0, 0.5)]
+    follower, _, closest, _ = _drive(rock, [(1.0 * i, 0.0) for i in range(1, 7)])
+    assert follower.done and follower.stuck
+    assert closest > 0.45
