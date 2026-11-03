@@ -27,9 +27,8 @@
   <plugin filename="gz-sim-contact-system"           name="gz::sim::systems::Contact"/>
   <plugin filename="gz-sim-joint-state-publisher-system" name="gz::sim::systems::JointStatePublisher"/>
   <plugin filename="gz-sim-imu-system"               name="gz::sim::systems::Imu"/>
-  <!-- sensors-system: use ogre (not ogre2) to avoid GPU/EGL crash on WSL2.
-       The ray sensor type is CPU-based so no GPU render engine is actually
-       invoked; this plugin is kept only for IMU passthrough. -->
+  <!-- sensors-system: renders the gpu_lidar offscreen. ogre (not ogre2) to
+       avoid GPU/EGL crashes on WSL2; works with LIBGL_ALWAYS_SOFTWARE=1. -->
   <plugin filename="gz-sim-sensors-system"           name="gz::sim::systems::Sensors">
     <render_engine>ogre</render_engine>
   </plugin>
@@ -553,7 +552,9 @@
            gpu_lidar is the only ray sensor in Gazebo Harmonic; renders
            offscreen via gz-sim-sensors-system. gz_frame_id must be a TF
            frame published by robot_state_publisher (lidar_link). -->
-      <sensor name='lidar' type='ray'>
+      <!-- type must be gpu_lidar: Harmonic's Sensors system never creates a CPU
+           'ray'/'lidar' sensor, so 'ray' advertises /scan but publishes nothing. -->
+      <sensor name='lidar' type='gpu_lidar'>
         <pose>0.2 0 0.555 0 0 0</pose>
         <topic>scan</topic>
         <gz_frame_id>lidar_link</gz_frame_id>
