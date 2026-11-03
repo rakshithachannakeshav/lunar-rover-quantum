@@ -22,6 +22,7 @@ from planning_pkg.classical_planning import PlanResult, run_astar
 from planning_pkg.graph_model import load_graph, resolve_node
 from planning_pkg.quantum_optimizer import (
     QuantumPlanResult,
+    describe_qaoa_alone,
     run_qaoa,
     save_quantum_results,
 )
@@ -82,6 +83,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--seed", type=int, default=7)
     parser.add_argument("--penalty", type=float, default=None)
     parser.add_argument("--device", default="auto", choices=["auto", "CPU", "GPU"])
+    parser.add_argument("--selection", default="best",
+                        choices=["best", "most_likely", "top"])
     args = parser.parse_args(argv)
 
     print(f"[compare_planners] Loading graph: {args.graph}")
@@ -101,7 +104,9 @@ def main(argv: Optional[List[str]] = None) -> int:
             seed=args.seed,
             penalty=args.penalty,
             device=args.device,
+            selection=args.selection,
         )
+        # A* runs only after QAOA has finished, as a reference; nothing flows back.
         classical = run_astar(graph, start, goal)
     except Exception as exc:
         print(f"[compare_planners] ERROR: {exc}")
@@ -123,6 +128,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         f"[compare_planners] paths identical: {comparison['paths_identical']}; "
         f"valid samples={quantum.valid_samples}/{quantum.sampled_candidates}"
     )
+    for line in describe_qaoa_alone(quantum):
+        print(f"[compare_planners] {line}")
     print(f"[compare_planners] Saved: {saved['latest']}")
     return 0
 

@@ -1,8 +1,9 @@
-qiskit>=1.0.0
-qiskit-aer>=0.14.0
+# Qiskit 2.x needs NumPy 2; ROS 2 Jazzy / Ubuntu 24.04 ship NumPy 1.26.
+qiskit>=1.2,<2
+qiskit-aer>=0.15,<0.18
 qiskit-algorithms>=0.3.0
 networkx>=3.0
-numpy>=1.24.0
+numpy>=1.24.0,<2
 scipy>=1.10.0
 matplotlib>=3.7.0
 seaborn>=0.12.0

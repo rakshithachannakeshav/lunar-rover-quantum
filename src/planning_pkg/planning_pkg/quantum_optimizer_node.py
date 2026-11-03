@@ -11,7 +11,11 @@ from rclpy.node import Node
 from rclpy.qos import DurabilityPolicy, QoSProfile, ReliabilityPolicy
 
 from planning_pkg.graph_model import load_graph, resolve_node
-from planning_pkg.quantum_optimizer import run_qaoa, save_quantum_results
+from planning_pkg.quantum_optimizer import (
+    describe_qaoa_alone,
+    run_qaoa,
+    save_quantum_results,
+)
 
 
 class QuantumOptimizerNode(Node):
@@ -35,6 +39,8 @@ class QuantumOptimizerNode(Node):
         self.declare_parameter("restarts", 4)
         self.declare_parameter("seed", 7)
         self.declare_parameter("device", "auto")
+        # best | most_likely | top -- see quantum_optimizer.SELECTION_MODES
+        self.declare_parameter("selection", "best")
         self.declare_parameter("save_results", True)
 
         qos = QoSProfile(
@@ -156,6 +162,9 @@ class QuantumOptimizerNode(Node):
                 device=str(
                     self.get_parameter("device").value
                 ),
+                selection=str(
+                    self.get_parameter("selection").value
+                ),
             )
 
             if bool(
@@ -184,6 +193,8 @@ class QuantumOptimizerNode(Node):
                 f"device={quantum.device} | "
                 f"valid_samples={quantum.valid_samples}"
             )
+            for line in describe_qaoa_alone(quantum):
+                self.get_logger().info(line)
 
             self.get_logger().info(
                 "Published quantum path on /path/quantum"

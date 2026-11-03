@@ -87,6 +87,20 @@ class QuantumPlanResult:
     valid_samples: int
     sampled_candidates: int
     device: str = "CPU"
+    # How the reported path was picked from the QAOA samples (see SELECTION_MODES).
+    selection: str = "best"
+    # Diagnostics that show what QAOA itself contributed.
+    selected_count: int = 0              # shots that produced the reported bitstring
+    selected_probability: float = 0.0    # selected_count / shots
+    valid_fraction: float = 0.0          # valid_samples / shots
+    distinct_valid_paths: int = 0
+    top_bitstring: str = ""              # single most frequent bitstring (any validity)
+    top_bitstring_valid: bool = False
+    best_of_shots_energy: Optional[float] = None
+    most_likely_energy: Optional[float] = None
+    # Uniform-random sampling baseline with the same number of shots (no QAOA).
+    random_valid_fraction: Optional[float] = None
+    random_best_energy: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         data = asdict(self)
@@ -695,6 +709,68 @@ def _counts_to_candidates(counts: Mapping[str, int]) -> Iterable[Tuple[str, int]
     return sorted(counts.items(), key=lambda item: item[1], reverse=True)
 
 
+# best        lowest-energy valid sample among all shots (sampling does part of the work)
+# most_likely valid path QAOA sampled most often (QAOA's own answer)
+# top         the single most frequent bitstring; fails if it is not a valid path
+SELECTION_MODES = ("best", "most_likely", "top")
+
+
+def _decode_valid_path(
+    graph: nx.Graph,
+    reduced: nx.MultiGraph,
+    qubo: QuboModel,
+    bitstring: str,
+    start: Any,
+    goal: Any,
+) -> Optional[Tuple[List[Any], float]]:
+    """Decode one sampled bitstring to (original-graph path, energy), or None if invalid."""
+    bits = _decode_bitstring(bitstring, qubo.num_variables)
+    reduced_path = _selected_path_from_bits(reduced, qubo, bits, start, goal)
+    if reduced_path is None:
+        return None
+    try:
+        original_path = _selected_original_path(reduced, reduced_path, bits, qubo)
+    except ValueError:
+        return None
+    if original_path[0] != start or original_path[-1] != goal:
+        return None
+    if len(set(original_path)) != len(original_path):
+        return None
+    if not nx.is_simple_path(graph, original_path):
+        return None
+    return original_path, _path_weight(graph, original_path)
+
+
+def _random_baseline(
+    graph: nx.Graph,
+    reduced: nx.MultiGraph,
+    qubo: QuboModel,
+    shots: int,
+    seed: int,
+    start: Any,
+    goal: Any,
+) -> Tuple[float, Optional[float]]:
+    """Uniform-random bitstrings, same shot count: (valid fraction, best valid energy)."""
+    rng = np.random.default_rng(seed)
+    n = qubo.num_variables
+    samples = rng.integers(0, 2, size=(shots, n))
+    counts: Dict[str, int] = {}
+    for row in samples:
+        # Qiskit order: q[n-1] ... q[0]
+        key = "".join(str(int(b)) for b in row[::-1])
+        counts[key] = counts.get(key, 0) + 1
+    valid = 0
+    best: Optional[float] = None
+    for bitstring, count in counts.items():
+        decoded = _decode_valid_path(graph, reduced, qubo, bitstring, start, goal)
+        if decoded is None:
+            continue
+        valid += count
+        if best is None or decoded[1] < best:
+            best = decoded[1]
+    return valid / shots, best
+
+
 def run_qaoa(
     graph: nx.Graph,
     start: Any,
@@ -707,12 +783,21 @@ def run_qaoa(
     seed: int = 7,
     penalty: Optional[float] = None,
     device: str = "auto",
+    selection: str = "best",
+    random_baseline: bool = True,
 ) -> QuantumPlanResult:
-    """Build the reduced QUBO, run QAOA on AerSimulator, and decode the best path."""
+    """Build the reduced QUBO, run QAOA on AerSimulator, and decode a path.
+
+    `selection` picks which sampled path is reported (see SELECTION_MODES). Use
+    'most_likely' or 'top' to judge QAOA on its own probability distribution
+    rather than on best-of-N sampling.
+    """
     _, transpile, _, _, _ = _require_qiskit()
     device = resolve_device(device)
     if shots < 1:
         raise ValueError("shots must be >= 1.")
+    if selection not in SELECTION_MODES:
+        raise ValueError(f"selection must be one of {SELECTION_MODES}, got {selection!r}.")
 
     started = time.perf_counter()
     reduced = build_quantum_corridor(
@@ -739,39 +824,51 @@ def run_qaoa(
 
     valid_samples = 0
     sampled_candidates = sum(counts.values())
-    best_valid: Optional[Tuple[float, str, List[Any], List[int]]] = None
+    # (energy, bitstring, path, count)
+    best_valid: Optional[Tuple[float, str, List[Any], int]] = None
+    most_likely: Optional[Tuple[float, str, List[Any], int]] = None
+    distinct_valid = 0
 
-    for bitstring, count in _counts_to_candidates(counts):
-        bits = _decode_bitstring(bitstring, qubo.num_variables)
-        reduced_path = _selected_path_from_bits(reduced, qubo, bits, start, goal)
-        if reduced_path is None:
+    ranked = list(_counts_to_candidates(counts))
+    top_bitstring = ranked[0][0] if ranked else ""
+    top_decoded = None
+
+    for rank, (bitstring, count) in enumerate(ranked):
+        decoded = _decode_valid_path(graph, reduced, qubo, bitstring, start, goal)
+        if rank == 0:
+            top_decoded = decoded
+        if decoded is None:
             continue
-        try:
-            original_path = _selected_original_path(
-                reduced, reduced_path, bits, qubo
-            )
-        except ValueError:
-            continue
-        if original_path[0] != start or original_path[-1] != goal:
-            continue
-        # Validate against the real graph and ensure no repeated node.
-        if len(set(original_path)) != len(original_path):
-            continue
-        if not nx.is_simple_path(graph, original_path):
-            continue
+        path, energy = decoded
         valid_samples += count
-        energy = _path_weight(graph, original_path)
-        candidate = (energy, bitstring, original_path, bits)
-        if best_valid is None or candidate[0] < best_valid[0]:
+        distinct_valid += 1
+        candidate = (energy, bitstring, path, count)
+        if best_valid is None or energy < best_valid[0]:
             best_valid = candidate
+        # ranked is sorted by count, so the first valid one is the most likely.
+        if most_likely is None:
+            most_likely = candidate
 
-    if best_valid is None:
-        # No classical fallback: if QAOA sampled no feasible path, report the failure.
-        raise RuntimeError(
-            f"QAOA found no valid path in {sampled_candidates} shots "
-            f"({qubo.num_variables} qubits, reps={reps}); try more reps/shots/restarts."
-        )
-    _, best_bitstring, best_path, _ = best_valid
+    # No classical fallback anywhere: if QAOA did not produce the requested kind
+    # of valid path, report the failure instead of substituting another planner.
+    if selection == "top":
+        if top_decoded is None:
+            raise RuntimeError(
+                f"QAOA's most frequent bitstring {top_bitstring} "
+                f"({counts.get(top_bitstring, 0)}/{sampled_candidates} shots) is not a "
+                f"valid path ({qubo.num_variables} qubits, reps={reps}). "
+                f"Valid samples: {valid_samples}/{sampled_candidates}. "
+                "Try more reps/restarts, or --selection most_likely."
+            )
+        chosen = (top_decoded[1], top_bitstring, top_decoded[0], counts[top_bitstring])
+    else:
+        chosen = best_valid if selection == "best" else most_likely
+        if chosen is None:
+            raise RuntimeError(
+                f"QAOA found no valid path in {sampled_candidates} shots "
+                f"({qubo.num_variables} qubits, reps={reps}); try more reps/shots/restarts."
+            )
+    _, best_bitstring, best_path, selected_count = chosen
 
     coords = [
         (float(graph.nodes[n].get("pos_x", 0.0)),
@@ -781,6 +878,13 @@ def run_qaoa(
     total_energy = _path_weight(graph, best_path)
     total_distance = _path_distance(graph, best_path)
     runtime_ms = (time.perf_counter() - started) * 1000.0
+
+    random_valid_fraction: Optional[float] = None
+    random_best_energy: Optional[float] = None
+    if random_baseline:
+        random_valid_fraction, random_best_energy = _random_baseline(
+            graph, reduced, qubo, shots, seed, start, goal
+        )
 
     return QuantumPlanResult(
         algorithm="QAOA",
@@ -802,7 +906,39 @@ def run_qaoa(
         valid_samples=valid_samples,
         sampled_candidates=sampled_candidates,
         device=device,
+        selection=selection,
+        selected_count=int(selected_count),
+        selected_probability=selected_count / sampled_candidates,
+        valid_fraction=valid_samples / sampled_candidates,
+        distinct_valid_paths=distinct_valid,
+        top_bitstring=top_bitstring,
+        top_bitstring_valid=top_decoded is not None,
+        best_of_shots_energy=best_valid[0] if best_valid else None,
+        most_likely_energy=most_likely[0] if most_likely else None,
+        random_valid_fraction=random_valid_fraction,
+        random_best_energy=random_best_energy,
     )
+
+
+def describe_qaoa_alone(q: QuantumPlanResult) -> List[str]:
+    """Human-readable lines that show how much of the answer QAOA produced itself."""
+    def fmt(v: Optional[float]) -> str:
+        return "none" if v is None else f"{v:.4f}"
+
+    lines = [
+        f"selection={q.selection}: reported bitstring seen {q.selected_count}/{q.shots} "
+        f"shots (p={q.selected_probability:.4f})",
+        f"QAOA valid-path rate={q.valid_fraction:.4f} over {q.distinct_valid_paths} "
+        f"distinct valid paths; top bitstring valid={q.top_bitstring_valid}",
+        f"energy: most-likely={fmt(q.most_likely_energy)}  "
+        f"best-of-{q.shots}-shots={fmt(q.best_of_shots_energy)}",
+    ]
+    if q.random_valid_fraction is not None:
+        lines.append(
+            f"uniform-random baseline ({q.shots} shots, no QAOA): valid rate="
+            f"{q.random_valid_fraction:.4f}, best energy={fmt(q.random_best_energy)}"
+        )
+    return lines
 
 
 def save_quantum_results(
@@ -860,6 +996,15 @@ def main(argv: Optional[List[str]] = None) -> int:
         "--device", default="auto", choices=["auto", "CPU", "GPU"],
         help="Aer simulator device; auto picks GPU when qiskit-aer-gpu sees one.",
     )
+    parser.add_argument(
+        "--selection", default="best", choices=list(SELECTION_MODES),
+        help="best: lowest-energy valid shot; most_likely: most frequent valid path "
+             "(QAOA alone); top: most frequent bitstring, error if invalid.",
+    )
+    parser.add_argument(
+        "--no-random-baseline", action="store_true",
+        help="Skip the uniform-random sampling baseline.",
+    )
     args = parser.parse_args(argv)
 
     print(f"[quantum_optimizer] Loading graph: {args.graph}")
@@ -879,6 +1024,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             seed=args.seed,
             penalty=args.penalty,
             device=args.device,
+            selection=args.selection,
+            random_baseline=not args.no_random_baseline,
         )
     except Exception as exc:
         print(f"[quantum_optimizer] ERROR: {exc}")
@@ -895,6 +1042,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         f"[quantum_optimizer] reduced graph: {quantum.reduced_nodes} nodes, "
         f"{quantum.reduced_edges} edges; valid samples={quantum.valid_samples}"
     )
+    for line in describe_qaoa_alone(quantum):
+        print(f"[quantum_optimizer] {line}")
     print(f"[quantum_optimizer] Saved: {saved['latest']}")
     return 0
 

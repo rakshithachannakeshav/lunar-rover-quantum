@@ -26,6 +26,18 @@ def generate_launch_description():
     )
     goal_x_arg = DeclareLaunchArgument("goal_x", default_value="35.0")
     goal_y_arg = DeclareLaunchArgument("goal_y", default_value="5.0")
+    # QAOA knobs (quantum mode only). selection:=most_likely or top judges QAOA
+    # on its own output distribution instead of best-of-N sampling.
+    qaoa_args = [
+        DeclareLaunchArgument("selection", default_value="best",
+                              description="best | most_likely | top"),
+        DeclareLaunchArgument("shots", default_value="2048"),
+        DeclareLaunchArgument("reps", default_value="1"),
+        DeclareLaunchArgument("restarts", default_value="4"),
+        DeclareLaunchArgument("max_edges", default_value="12"),
+        DeclareLaunchArgument("seed", default_value="7"),
+        DeclareLaunchArgument("device", default_value="auto"),
+    ]
 
     planner_mode = LaunchConfiguration("planner_mode")
 
@@ -43,6 +55,13 @@ def generate_launch_description():
                 "graph_path": LaunchConfiguration("graph_path"),
                 "goal_x": LaunchConfiguration("goal_x"),
                 "goal_y": LaunchConfiguration("goal_y"),
+                "selection": LaunchConfiguration("selection"),
+                "shots": LaunchConfiguration("shots"),
+                "reps": LaunchConfiguration("reps"),
+                "restarts": LaunchConfiguration("restarts"),
+                "max_edges": LaunchConfiguration("max_edges"),
+                "seed": LaunchConfiguration("seed"),
+                "device": LaunchConfiguration("device"),
             }
         ],
         condition=IfCondition(is_quantum),
@@ -90,6 +109,7 @@ def generate_launch_description():
             graph_path_arg,
             goal_x_arg,
             goal_y_arg,
+            *qaoa_args,
             quantum_planner,
             classical_planner,
             quantum_executor,
