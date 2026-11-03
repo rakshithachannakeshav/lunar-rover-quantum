@@ -15,7 +15,9 @@ Phases (each writes results/qaoa_advantage_study/<phase>.json):
             seeded with a black-box 2-opt descent, on instances where that seed is
             not already optimal: does QAOA improve on the tour it was given?
   transfer  deep compact QAOA (p up to 10) with angles trained on 6-7 sites and
-            reused, untrained, on 8-10 sites.
+            reused, untrained, on 8-10 sites (CPU); add --transfer-gpu-ns 11,12 to
+            also evaluate them at 26 / 29 qubits with the CuPy simulator from
+            qaoa_gpu_scaleup.py (needs a CUDA GPU; 29 qubits = 4 GiB).
   report    scaling-exponent fits + ADVANTAGE_TABLES.md from the JSON files.
 
 One query = one tour-energy evaluation (same as qaoa_vs_classical_queries.py).
@@ -158,6 +160,28 @@ def transfer_phase(train_ns, test_ns, seeds, pmax, maxiter, jobs):
                             [(n, s, pmax, {p: a.tolist() for p, a in angles.items()})
                              for n in test_ns for s in seeds]), [])
     return rows, {p: a.tolist() for p, a in angles.items()}
+
+
+def transfer_gpu_rows(ns, seeds, pmax, angles):
+    """Evaluate transferred angles on the GPU simulator (no training there either)."""
+    import qaoa_gpu_scaleup as G      # imports cupy: only when asked for
+    rows = []
+    for n in ns:
+        for seed in seeds:
+            cost = S.terrain_instance(n, seed)
+            g = G.GpuQaoa(cost, float(held_karp(cost, True).cost))
+            for p in range(1, pmax + 1):
+                m = g.metrics(np.asarray(angles[p], dtype=float))
+                rows.append({"n_sites": n, "seed": seed, "qubits": g.q, "p": p,
+                             "p_opt": m["p_opt"], "mean_ratio": m["mean_ratio_qaoa"],
+                             "uniform_p_opt": m["uniform_p_opt"], "amplification": m["amplification"],
+                             "shots_to_solution": m["shots_to_solution"],
+                             "train_evals_on_this_instance": 0, "simulator": "gpu"})
+            print(f"[transfer-gpu] N={n} seed={seed} ({g.q} qubits): amplification at p={pmax} "
+                  f"{rows[-1]['amplification']:.1f}x", flush=True)
+            del g
+            G.cp.get_default_memory_pool().free_all_blocks()
+    return rows
 
 
 def _train_job(args):
@@ -310,6 +334,7 @@ def main(argv=None):
     ap.add_argument("--transfer-train-ns", default="6,7")
     ap.add_argument("--transfer-test-ns", default="8,9,10", help="10 sites = 22 qubits")
     ap.add_argument("--transfer-pmax", type=int, default=10)
+    ap.add_argument("--transfer-gpu-ns", default="", help="e.g. 11,12 (CUDA GPU + cupy)")
     ap.add_argument("--maxiter", type=int, default=60)
     ap.add_argument("--out", default=None, help="output directory (default results/qaoa_advantage_study)")
     a = ap.parse_args(argv)
@@ -340,6 +365,9 @@ def main(argv=None):
         elif ph == "transfer":
             rows, angles = transfer_phase(ints(a.transfer_train_ns), ints(a.transfer_test_ns), seeds,
                                           a.transfer_pmax, a.maxiter, a.jobs)
+            if a.transfer_gpu_ns:
+                rows += transfer_gpu_rows(ints(a.transfer_gpu_ns), seeds, a.transfer_pmax,
+                                          {int(p): v for p, v in angles.items()})
             _dump("transfer", rows)
             _dump("transfer_angles", [angles])
         else:

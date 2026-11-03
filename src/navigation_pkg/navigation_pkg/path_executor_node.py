@@ -31,6 +31,8 @@ from navigation_pkg.path_following import (
     DEFAULT_BACKUP_DISTANCE,
     DEFAULT_CLEAR_DISTANCE,
     DEFAULT_COMMIT_DISTANCE,
+    DEFAULT_REAR_CLEARANCE,
+    DEFAULT_SIDE_CLEARANCE,
     DEFAULT_STOP_DISTANCE,
     DEFAULT_WAYPOINT_TOLERANCE,
     ObstacleAvoider,
@@ -66,6 +68,10 @@ class PathExecutorNode(Node):
         self.declare_parameter("clear_distance", DEFAULT_CLEAR_DISTANCE)
         self.declare_parameter("backup_distance", DEFAULT_BACKUP_DISTANCE)
         self.declare_parameter("commit_distance", DEFAULT_COMMIT_DISTANCE)
+        self.declare_parameter("side_clearance", DEFAULT_SIDE_CLEARANCE)
+        self.declare_parameter("rear_clearance", DEFAULT_REAR_CLEARANCE)
+        # Give up (stop) after avoiding continuously for this long: boxed in.
+        self.declare_parameter("avoid_timeout", 30.0)
         # A scan older than this is ignored (lidar dropped out).
         self.declare_parameter("scan_timeout", 0.5)
 
@@ -113,6 +119,8 @@ class PathExecutorNode(Node):
         self.scan = None
         self.scan_time = None
         self.was_avoiding = False
+        self.was_detouring = False
+        self.avoiding_since = None
 
         self.get_logger().info(
             f"Path executor started. Listening on {self.path_topic}, {odom_topic} "
@@ -139,11 +147,15 @@ class PathExecutorNode(Node):
                 clear_distance=float(self.get_parameter("clear_distance").value),
                 backup_distance=float(self.get_parameter("backup_distance").value),
                 commit_distance=float(self.get_parameter("commit_distance").value),
+                side_clearance=float(self.get_parameter("side_clearance").value),
+                rear_clearance=float(self.get_parameter("rear_clearance").value),
                 max_linear=float(self.get_parameter("max_linear").value),
                 max_angular=float(self.get_parameter("max_angular").value),
             ),
         )
 
+        self.avoiding_since = None
+        self.was_detouring = False
         self.get_logger().info(
             f"Received new path on {self.path_topic} with {len(waypoints)} waypoints."
         )
@@ -185,18 +197,50 @@ class PathExecutorNode(Node):
         scan = self._fresh_scan()
         result = self.follower.step(self.x, self.y, self.yaw, scan)
 
-        if result.avoiding and not self.was_avoiding:
+        if result.detouring and not self.was_detouring:
             side = "left" if self.follower.avoider.side == 1 else "right"
             self.get_logger().warn(
                 f"Obstacle {scan.front:.2f} m ahead at ({self.x:.2f}, {self.y:.2f}); "
                 f"turning {side} to go round it."
             )
-        elif self.was_avoiding and not result.avoiding:
+        elif self.was_detouring and not result.detouring:
             self.get_logger().info(
                 f"Clear of obstacle; resuming path at waypoint "
                 f"{self.follower.index + 1}/{len(self.follower.waypoints)}."
             )
+        self.was_detouring = result.detouring
+
+        now = self.get_clock().now()
+        if result.avoiding:
+            if self.avoiding_since is None:
+                self.avoiding_since = now
+            stuck_for = (now - self.avoiding_since).nanoseconds * 1e-9
+            if stuck_for > float(self.get_parameter("avoid_timeout").value):
+                self.get_logger().error(
+                    f"Could not get round the obstacle in {stuck_for:.0f} s at "
+                    f"({self.x:.2f}, {self.y:.2f}); stopping. Send a new path to retry."
+                )
+                self.follower = None
+                self.avoiding_since = None
+                self.cmd_pub.publish(Twist())
+                return
+        else:
+            self.avoiding_since = None
         self.was_avoiding = result.avoiding
+
+        if result.skipped_index is not None:
+            gx, gy = self.follower.waypoints[result.skipped_index]
+            self.get_logger().warn(
+                f"Waypoint {result.skipped_index + 1}/{len(self.follower.waypoints)} at "
+                f"({gx:.2f}, {gy:.2f}) looks blocked after repeated detours; skipping it."
+            )
+        if result.stuck:
+            self.get_logger().error(
+                f"Goal unreachable after repeated detours at ({self.x:.2f}, {self.y:.2f}); "
+                f"stopping. Send a new path to retry."
+            )
+            self.cmd_pub.publish(Twist())
+            return
 
         if result.reached_index is not None:
             gx, gy = self.follower.waypoints[result.reached_index]

@@ -30,6 +30,7 @@
   <arg name="start_y" default=""/>
   <arg name="avoid_obstacles" default="true"/>    <!-- false: old stop-and-wait -->
   <arg name="avoid_stop_distance" default="0.40"/> <!-- m: obstacle this close ahead -> avoid -->
+  <arg name="avoid_side_clearance" default="0.32"/> <!-- m: veer away from a side this close -->
 
   <node pkg="arjuna_quantum_nav" type="quantum_nav_node.py" name="quantum_nav" output="screen">
     <param name="algorithm" value="$(arg algorithm)"/>
@@ -73,6 +74,9 @@
     <param name="avoid_backup_distance" value="0.22"/>
     <param name="avoid_commit_distance" value="0.40"/>
     <param name="avoid_rear_clearance" value="0.25"/>
+    <param name="avoid_side_clearance" value="$(arg avoid_side_clearance)"/>
+    <param name="no_progress_travel" value="3.0"/>  <!-- m driven without getting closer -> replan -->
+    <param name="max_stuck_replans" value="3"/>
     <param name="replan_after_detour" value="true"/>
     <param name="avoid_timeout" value="25.0"/>
   </node>

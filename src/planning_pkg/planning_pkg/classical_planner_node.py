@@ -48,6 +48,7 @@ from planning_pkg.classical_planning import (
     run_dijkstra,
     save_plan_results,
 )
+from planning_pkg.graph_model import endpoint_path
 
 
 class ClassicalPlannerNode(Node):
@@ -174,7 +175,11 @@ class ClassicalPlannerNode(Node):
         path_msg.header.frame_id = self.frame_id
         path_msg.header.stamp = self.get_clock().now().to_msg()
 
-        for x, y in plan.path_coords:
+        # Pin the graph path to the exact requested endpoints (it otherwise starts and
+        # ends on the nearest node centres, short of the goal).
+        coords = endpoint_path(plan.path_coords, (self.start_x, self.start_y),
+                               (self.goal_x, self.goal_y))
+        for x, y in coords:
             pose = PoseStamped()
             pose.header.frame_id = self.frame_id
             pose.header.stamp = path_msg.header.stamp

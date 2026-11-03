@@ -37,11 +37,17 @@ def generate_launch_description():
                               description="use /scan to steer round obstacles"),
         DeclareLaunchArgument("stop_distance", default_value="0.7",
                               description="obstacle this close ahead triggers avoidance"),
+        DeclareLaunchArgument("side_clearance", default_value="0.6",
+                              description="veer away from anything this close on a flank"),
+        DeclareLaunchArgument("avoid_timeout", default_value="30.0",
+                              description="stop after avoiding continuously this many seconds"),
     ]
     executor_params = {
         "goal_tolerance": LaunchConfiguration("goal_tolerance"),
         "avoid_obstacles": LaunchConfiguration("avoid_obstacles"),
         "stop_distance": LaunchConfiguration("stop_distance"),
+        "side_clearance": LaunchConfiguration("side_clearance"),
+        "avoid_timeout": LaunchConfiguration("avoid_timeout"),
     }
     # QAOA knobs (quantum mode only). selection:=most_likely or top judges QAOA
     # on its own output distribution instead of best-of-N sampling.

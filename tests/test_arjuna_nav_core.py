@@ -280,3 +280,19 @@ def test_closed_loop_goes_round_a_rock_and_reaches_the_goal():
     assert f.done and avoided
     assert closest > 0.22                       # robot radius is 0.2 m: never touched the rock
     assert math.hypot(x - goal[0], y - goal[1]) <= 0.15
+
+
+def test_progress_watchdog_fires_only_without_progress():
+    w = nav_core.ProgressWatchdog(travel=3.0, step=0.15)
+    target = (5.0, 0.0)
+    for i in range(40):                          # driving towards the target: fine
+        assert not w.update(0.1 * i, 0.0, target)
+    w.reset()
+    fired = False
+    for i in range(400):                         # circling 1 m away from it
+        a = 0.05 * i
+        fired = w.update(4.0 + 0.5 * math.cos(a), 0.5 * math.sin(a), target)
+        if fired:
+            break
+    assert fired and i * 0.05 * 0.5 > 3.0 - 0.1   # after ~3 m of travel
+    assert not w.update(4.0, 0.0, (9.0, 9.0))     # new target resets it
