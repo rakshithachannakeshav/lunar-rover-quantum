@@ -186,3 +186,32 @@ def test_resolve_device_auto_and_rejects_missing():
     if "GPU" not in available:
         with pytest.raises(RuntimeError, match="qiskit-aer-gpu"):
             resolve_device("GPU")
+
+
+def test_selection_modes_report_qaoa_alone_diagnostics(graph):
+    """most_likely/top judge QAOA on its own distribution; no classical planner runs."""
+    pytest.importorskip("qiskit_aer")
+    from planning_pkg.quantum_optimizer import run_qaoa
+
+    results = {}
+    for mode in ("best", "most_likely"):
+        q = run_qaoa(graph, "A", "D", shots=256, restarts=2, device="CPU", selection=mode)
+        assert q.selection == mode
+        assert q.path_nodes[0] == "A" and q.path_nodes[-1] == "D"
+        assert 0.0 < q.valid_fraction <= 1.0
+        assert 0 < q.selected_count <= q.shots
+        assert q.random_valid_fraction is not None
+        results[mode] = q
+    # best-of-shots can never be worse than the most likely valid path
+    assert results["best"].total_energy <= results["most_likely"].total_energy + 1e-9
+    assert results["most_likely"].total_energy == pytest.approx(
+        results["most_likely"].most_likely_energy
+    )
+
+
+def test_selection_mode_is_validated(graph):
+    pytest.importorskip("qiskit_aer")
+    from planning_pkg.quantum_optimizer import run_qaoa
+
+    with pytest.raises(ValueError):
+        run_qaoa(graph, "A", "D", shots=8, device="CPU", selection="astar")

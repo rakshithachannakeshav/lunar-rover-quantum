@@ -24,6 +24,10 @@ def generate_launch_description():
         DeclareLaunchArgument("restarts", default_value="4"),
         DeclareLaunchArgument("seed", default_value="7"),
         DeclareLaunchArgument("device", default_value="auto"),
+        DeclareLaunchArgument(
+            "selection", default_value="best",
+            description="best | most_likely | top (most_likely/top = QAOA alone)",
+        ),
     ]
 
     node = Node(
@@ -46,6 +50,7 @@ def generate_launch_description():
                 "restarts": LaunchConfiguration("restarts"),
                 "seed": LaunchConfiguration("seed"),
                 "device": LaunchConfiguration("device"),
+                "selection": LaunchConfiguration("selection"),
             }
         ],
     )
