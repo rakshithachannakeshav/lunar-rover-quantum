@@ -1,0 +1,38 @@
+{
+ "terrain instances: classical local search": {
+  "slope": 4.228346641338207,
+  "r2": 0.986414952394803
+ },
+ "terrain instances: quantum local search": {
+  "slope": 3.8001871716774653,
+  "r2": 0.9767794835024844
+ },
+ "synthetic lunar-slope instances: classical local search": {
+  "slope": 3.507565814145244,
+  "r2": 0.9763043988101183
+ },
+ "synthetic lunar-slope instances: quantum local search": {
+  "slope": 2.9207344725835203,
+  "r2": 0.9638154139873929
+ },
+ "2-opt (query_race.json)": {
+  "slope": 3.918022858467638,
+  "r2": 0.9662485709687676
+ },
+ "simulated annealing (query_race.json)": {
+  "slope": 4.812520910249008,
+  "r2": 0.9707467330392356
+ },
+ "compact QAOA, no training (query_race.json)": {
+  "slope": 16.839760429457993,
+  "r2": 0.9600306598896672
+ },
+ "random sampling (query_race.json)": {
+  "slope": 16.80106579446812,
+  "r2": 0.9867683678691217
+ },
+ "compact QAOA, transferred p=10": {
+  "slope": 18.6410026920013,
+  "r2": 0.9999068231635793
+ }
+}
