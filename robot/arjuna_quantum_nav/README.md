@@ -84,6 +84,38 @@ rostopic echo /quantum_nav/status   # what it's doing right now
 rostopic echo /quantum_nav/report   # planned energy/distance/climb/nodes/runtime per algorithm
 ```
 
+### Drive from a web page (goal or your own route)
+
+`web/rover.html` controls the robot from any browser on the same network. It shows the
+map, the robot, live LiDAR hits and the path being driven.
+
+One-time install on the Jetson: `sudo apt install ros-melodic-rosbridge-server`.
+
+```bash
+roslaunch arjuna_quantum_nav quantum_nav.launch algorithm:=astar max_linear:=0.10 web:=true
+hostname -I        # the Jetson's IP address
+```
+On the laptop, open `web/rover.html` (double-click it; no server needed). Enter
+`ws://<jetson-ip>:9090` and press **Connect**.
+
+| Mode | You click | The robot |
+|---|---|---|
+| **Goal** | one point | plans its own route there (`/move_base_simple/goal`, same as RViz) |
+| **Route** | points in order | drives through each point in turn, planning each leg round mapped obstacles (`/quantum_nav/route`, `nav_msgs/Path`) |
+
+Press **Send** to start. Drag pans, the mouse wheel zooms, and Backspace undoes a point.
+Both modes keep LiDAR obstacle avoidance on. **STOP** (or the Space key) publishes
+`/quantum_nav/cancel`, which stops the robot and drops the goal or route. It also sends a zero
+`/cmd_vel`. If the pose topic or laser offset differs from the defaults, set them under
+**Topics and settings**.
+
+From the command line, the same route looks like this:
+```bash
+rostopic pub -1 /quantum_nav/route nav_msgs/Path "{header: {frame_id: map}, poses: [
+  {pose: {position: {x: 1.0, y: 0.0}}}, {pose: {position: {x: 1.0, y: 1.0}}}]}"
+rostopic pub -1 /quantum_nav/cancel std_msgs/Empty "{}"
+```
+
 **Safety built in.** The robot stops when:
 - the pose stops updating;
 - the LiDAR sees something within 25 cm ahead, or the sonar reads under 20 cm. If it stays
