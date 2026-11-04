@@ -1,0 +1,1370 @@
+[
+ {
+  "family": "terrain",
+  "n_sites": 4,
+  "seed": 0,
+  "moves_K": 6,
+  "descent": {
+   "best_known": 318.82811202313286,
+   "top5pct_cost": 318.82811202313286,
+   "classical": {
+    "queries_median": 11.0,
+    "cost_ratio_mean": 1.0000000000000002,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 40.0,
+    "cost_ratio_mean": 1.0000000000000002,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.275
+  },
+  "target": "optimum",
+  "target_cost": 318.828112341961,
+  "race": {
+   "classical": {
+    "median": 6.0,
+    "q99": 13.0,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 6.0,
+    "q99": 21.089999999999918,
+    "unsolved": 0
+   },
+   "speedup_median": 1.0,
+   "speedup_q99": 0.6164058795637767
+  },
+  "seconds": 2.3279428000000735
+ },
+ {
+  "family": "terrain",
+  "n_sites": 4,
+  "seed": 1,
+  "moves_K": 6,
+  "descent": {
+   "best_known": 315.4142445787034,
+   "top5pct_cost": 315.4142445787034,
+   "classical": {
+    "queries_median": 11.0,
+    "cost_ratio_mean": 1.0,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 41.0,
+    "cost_ratio_mean": 1.0,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.2682926829268293
+  },
+  "target": "optimum",
+  "target_cost": 315.41424489411776,
+  "race": {
+   "classical": {
+    "median": 5.0,
+    "q99": 14.009999999999991,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 7.0,
+    "q99": 24.029999999999973,
+    "unsolved": 0
+   },
+   "speedup_median": 0.7142857142857143,
+   "speedup_q99": 0.583021223470662
+  },
+  "seconds": 2.4537450000000263
+ },
+ {
+  "family": "terrain",
+  "n_sites": 4,
+  "seed": 2,
+  "moves_K": 6,
+  "descent": {
+   "best_known": 467.5623862044322,
+   "top5pct_cost": 467.5623862044322,
+   "classical": {
+    "queries_median": 11.0,
+    "cost_ratio_mean": 0.9999999999999999,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 39.0,
+    "cost_ratio_mean": 0.9999999999999999,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.28205128205128205
+  },
+  "target": "optimum",
+  "target_cost": 467.5623866719947,
+  "race": {
+   "classical": {
+    "median": 5.0,
+    "q99": 9.009999999999991,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 6.0,
+    "q99": 18.00999999999999,
+    "unsolved": 0
+   },
+   "speedup_median": 0.8333333333333334,
+   "speedup_q99": 0.5002776235424762
+  },
+  "seconds": 2.814165800000069
+ },
+ {
+  "family": "terrain",
+  "n_sites": 4,
+  "seed": 3,
+  "moves_K": 6,
+  "descent": {
+   "best_known": 415.2073267338179,
+   "top5pct_cost": 415.2073267338179,
+   "classical": {
+    "queries_median": 11.5,
+    "cost_ratio_mean": 1.0000000000000002,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 40.5,
+    "cost_ratio_mean": 1.0027172622571214,
+    "false_stop_rate": 0.01
+   },
+   "descent_speedup": 0.2839506172839506
+  },
+  "target": "optimum",
+  "target_cost": 415.2073271490253,
+  "race": {
+   "classical": {
+    "median": 6.0,
+    "q99": 16.00999999999999,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 7.0,
+    "q99": 26.00999999999999,
+    "unsolved": 0
+   },
+   "speedup_median": 0.8571428571428571,
+   "speedup_q99": 0.6155324875048057
+  },
+  "seconds": 2.8045509999999467
+ },
+ {
+  "family": "terrain",
+  "n_sites": 6,
+  "seed": 0,
+  "moves_K": 15,
+  "descent": {
+   "best_known": 424.4696013994178,
+   "top5pct_cost": 424.4696013994178,
+   "classical": {
+    "queries_median": 32.0,
+    "cost_ratio_mean": 1.0012171911765637,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 67.0,
+    "cost_ratio_mean": 1.0009737529412508,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.47761194029850745
+  },
+  "target": "optimum",
+  "target_cost": 424.46960182388744,
+  "race": {
+   "classical": {
+    "median": 32.0,
+    "q99": 184.05999999999995,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 31.0,
+    "q99": 325.0899999999999,
+    "unsolved": 0
+   },
+   "speedup_median": 1.032258064516129,
+   "speedup_q99": 0.5661816727675413
+  },
+  "seconds": 3.343212900000026
+ },
+ {
+  "family": "terrain",
+  "n_sites": 6,
+  "seed": 1,
+  "moves_K": 15,
+  "descent": {
+   "best_known": 390.70454628354014,
+   "top5pct_cost": 390.70454628354014,
+   "classical": {
+    "queries_median": 34.0,
+    "cost_ratio_mean": 1.0,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 67.0,
+    "cost_ratio_mean": 1.0,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.5074626865671642
+  },
+  "target": "optimum",
+  "target_cost": 390.70454667424474,
+  "race": {
+   "classical": {
+    "median": 20.5,
+    "q99": 43.01999999999998,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 20.5,
+    "q99": 53.159999999999854,
+    "unsolved": 0
+   },
+   "speedup_median": 1.0,
+   "speedup_q99": 0.8092550790067738
+  },
+  "seconds": 3.119432999999958
+ },
+ {
+  "family": "terrain",
+  "n_sites": 6,
+  "seed": 2,
+  "moves_K": 15,
+  "descent": {
+   "best_known": 533.3563757080469,
+   "top5pct_cost": 533.3563757080469,
+   "classical": {
+    "queries_median": 33.0,
+    "cost_ratio_mean": 1.0000000000000007,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 66.0,
+    "cost_ratio_mean": 1.0000000000000007,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.5
+  },
+  "target": "optimum",
+  "target_cost": 533.3563762414035,
+  "race": {
+   "classical": {
+    "median": 17.0,
+    "q99": 40.01999999999998,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 18.0,
+    "q99": 41.01999999999998,
+    "unsolved": 0
+   },
+   "speedup_median": 0.9444444444444444,
+   "speedup_q99": 0.9756216479765968
+  },
+  "seconds": 3.6232718999999634
+ },
+ {
+  "family": "terrain",
+  "n_sites": 6,
+  "seed": 3,
+  "moves_K": 15,
+  "descent": {
+   "best_known": 488.5814745855633,
+   "top5pct_cost": 488.58147458556334,
+   "classical": {
+    "queries_median": 32.0,
+    "cost_ratio_mean": 1.0043495914090437,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 65.0,
+    "cost_ratio_mean": 1.003794324420655,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.49230769230769234
+  },
+  "target": "optimum",
+  "target_cost": 488.5814750741449,
+  "race": {
+   "classical": {
+    "median": 23.5,
+    "q99": 223.24999999999977,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 26.5,
+    "q99": 455.16999999999985,
+    "unsolved": 0
+   },
+   "speedup_median": 0.8867924528301887,
+   "speedup_q99": 0.4904760858580307
+  },
+  "seconds": 3.7378142000000025
+ },
+ {
+  "family": "terrain",
+  "n_sites": 8,
+  "seed": 0,
+  "moves_K": 28,
+  "descent": {
+   "best_known": 594.8690660158479,
+   "top5pct_cost": 594.8690660158479,
+   "classical": {
+    "queries_median": 75.0,
+    "cost_ratio_mean": 1.0088526922350831,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 103.5,
+    "cost_ratio_mean": 1.0130563330736473,
+    "false_stop_rate": 0.01
+   },
+   "descent_speedup": 0.7246376811594203
+  },
+  "target": "optimum",
+  "target_cost": 594.869066610717,
+  "race": {
+   "classical": {
+    "median": 79.0,
+    "q99": 508.16999999999985,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 70.5,
+    "q99": 496.94999999999914,
+    "unsolved": 0
+   },
+   "speedup_median": 1.1205673758865249,
+   "speedup_q99": 1.022577724117116
+  },
+  "seconds": 4.918300700000032
+ },
+ {
+  "family": "terrain",
+  "n_sites": 8,
+  "seed": 1,
+  "moves_K": 28,
+  "descent": {
+   "best_known": 586.3849563266328,
+   "top5pct_cost": 586.3849563266328,
+   "classical": {
+    "queries_median": 79.0,
+    "cost_ratio_mean": 1.0000000000000004,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 101.0,
+    "cost_ratio_mean": 1.0000000000000004,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.7821782178217822
+  },
+  "target": "optimum",
+  "target_cost": 586.384956913018,
+  "race": {
+   "classical": {
+    "median": 52.0,
+    "q99": 103.07999999999993,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 43.5,
+    "q99": 88.01999999999998,
+    "unsolved": 0
+   },
+   "speedup_median": 1.1954022988505748,
+   "speedup_q99": 1.1710974778459435
+  },
+  "seconds": 4.78068159999998
+ },
+ {
+  "family": "terrain",
+  "n_sites": 8,
+  "seed": 2,
+  "moves_K": 28,
+  "descent": {
+   "best_known": 639.7630013257343,
+   "top5pct_cost": 639.7630013257343,
+   "classical": {
+    "queries_median": 69.0,
+    "cost_ratio_mean": 1.0000000000000004,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 97.5,
+    "cost_ratio_mean": 1.0000000000000004,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.7076923076923077
+  },
+  "target": "optimum",
+  "target_cost": 639.7630019654973,
+  "race": {
+   "classical": {
+    "median": 42.0,
+    "q99": 80.02999999999997,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 36.0,
+    "q99": 70.05999999999995,
+    "unsolved": 0
+   },
+   "speedup_median": 1.1666666666666667,
+   "speedup_q99": 1.1423065943477024
+  },
+  "seconds": 4.738514799999962
+ },
+ {
+  "family": "terrain",
+  "n_sites": 8,
+  "seed": 3,
+  "moves_K": 28,
+  "descent": {
+   "best_known": 623.0599568724026,
+   "top5pct_cost": 623.0599568724026,
+   "classical": {
+    "queries_median": 70.0,
+    "cost_ratio_mean": 1.0141434505985676,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 99.0,
+    "cost_ratio_mean": 1.012485295564173,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.7070707070707071
+  },
+  "target": "optimum",
+  "target_cost": 623.0599574954628,
+  "race": {
+   "classical": {
+    "median": 67.0,
+    "q99": 369.7599999999993,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 53.0,
+    "q99": 455.0099999999991,
+    "unsolved": 0
+   },
+   "speedup_median": 1.2641509433962264,
+   "speedup_q99": 0.8126414804070241
+  },
+  "seconds": 5.765683200000012
+ },
+ {
+  "family": "terrain",
+  "n_sites": 10,
+  "seed": 0,
+  "moves_K": 45,
+  "descent": {
+   "best_known": 621.9842714355758,
+   "top5pct_cost": 621.9842714355759,
+   "classical": {
+    "queries_median": 143.5,
+    "cost_ratio_mean": 1.0091320053560802,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 137.0,
+    "cost_ratio_mean": 1.0111881776757559,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.0474452554744527
+  },
+  "target": "optimum",
+  "target_cost": 621.9842720575602,
+  "race": {
+   "classical": {
+    "median": 141.0,
+    "q99": 774.9199999999983,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 113.0,
+    "q99": 843.2699999999998,
+    "unsolved": 0
+   },
+   "speedup_median": 1.247787610619469,
+   "speedup_q99": 0.9189464821468788
+  },
+  "seconds": 6.222834400000011
+ },
+ {
+  "family": "terrain",
+  "n_sites": 10,
+  "seed": 1,
+  "moves_K": 45,
+  "descent": {
+   "best_known": 661.7864264956436,
+   "top5pct_cost": 661.7864264956436,
+   "classical": {
+    "queries_median": 132.0,
+    "cost_ratio_mean": 1.0185984526006522,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 138.0,
+    "cost_ratio_mean": 1.0156886126003641,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.9565217391304348
+  },
+  "target": "optimum",
+  "target_cost": 661.7864271574301,
+  "race": {
+   "classical": {
+    "median": 291.0,
+    "q99": 1088.1599999999999,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 269.0,
+    "q99": 1511.8299999999992,
+    "unsolved": 0
+   },
+   "speedup_median": 1.0817843866171004,
+   "speedup_q99": 0.7197634654690014
+  },
+  "seconds": 7.0802461999999196
+ },
+ {
+  "family": "terrain",
+  "n_sites": 10,
+  "seed": 2,
+  "moves_K": 45,
+  "descent": {
+   "best_known": 776.6982295427379,
+   "top5pct_cost": 776.6982295427379,
+   "classical": {
+    "queries_median": 130.5,
+    "cost_ratio_mean": 1.0185826454750901,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 136.5,
+    "cost_ratio_mean": 1.0172311803496292,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.9560439560439561
+  },
+  "target": "optimum",
+  "target_cost": 776.6982303194362,
+  "race": {
+   "classical": {
+    "median": 167.0,
+    "q99": 674.5699999999995,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 184.0,
+    "q99": 848.7299999999966,
+    "unsolved": 0
+   },
+   "speedup_median": 0.907608695652174,
+   "speedup_q99": 0.7947992883484761
+  },
+  "seconds": 7.377397100000053
+ },
+ {
+  "family": "terrain",
+  "n_sites": 10,
+  "seed": 3,
+  "moves_K": 45,
+  "descent": {
+   "best_known": 706.8889691742103,
+   "top5pct_cost": 706.8889691742103,
+   "classical": {
+    "queries_median": 135.0,
+    "cost_ratio_mean": 1.0142912516359532,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 137.0,
+    "cost_ratio_mean": 1.0166855148671212,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 0.9854014598540146
+  },
+  "target": "optimum",
+  "target_cost": 706.8889698810995,
+  "race": {
+   "classical": {
+    "median": 203.5,
+    "q99": 1278.1599999999999,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 212.0,
+    "q99": 1172.6999999999985,
+    "unsolved": 0
+   },
+   "speedup_median": 0.9599056603773585,
+   "speedup_q99": 1.0899292231602298
+  },
+  "seconds": 7.387645199999952
+ },
+ {
+  "family": "terrain",
+  "n_sites": 12,
+  "seed": 0,
+  "moves_K": 66,
+  "descent": {
+   "best_known": 707.0190661381905,
+   "top5pct_cost": 707.0190661381905,
+   "classical": {
+    "queries_median": 216.0,
+    "cost_ratio_mean": 1.0365684993263564,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 185.5,
+    "cost_ratio_mean": 1.0396349010378474,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.1644204851752022
+  },
+  "target": "optimum",
+  "target_cost": 707.0190668452096,
+  "race": {
+   "classical": {
+    "median": 811.5,
+    "q99": 3914.069999999999,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 646.0,
+    "q99": 3149.499999999996,
+    "unsolved": 0
+   },
+   "speedup_median": 1.2561919504643964,
+   "speedup_q99": 1.2427591681219254
+  },
+  "seconds": 10.322764499999948
+ },
+ {
+  "family": "terrain",
+  "n_sites": 12,
+  "seed": 1,
+  "moves_K": 66,
+  "descent": {
+   "best_known": 679.8453789137955,
+   "top5pct_cost": 679.8453789137956,
+   "classical": {
+    "queries_median": 217.5,
+    "cost_ratio_mean": 1.0123413961159382,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 180.5,
+    "cost_ratio_mean": 1.0142295327913704,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.2049861495844876
+  },
+  "target": "optimum",
+  "target_cost": 679.845379593641,
+  "race": {
+   "classical": {
+    "median": 481.5,
+    "q99": 3100.359999999996,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 367.0,
+    "q99": 2248.8999999999974,
+    "unsolved": 0
+   },
+   "speedup_median": 1.3119891008174387,
+   "speedup_q99": 1.3786117657521453
+  },
+  "seconds": 8.827922300000068
+ },
+ {
+  "family": "terrain",
+  "n_sites": 12,
+  "seed": 2,
+  "moves_K": 66,
+  "descent": {
+   "best_known": 782.3970123368827,
+   "top5pct_cost": 782.3970123368827,
+   "classical": {
+    "queries_median": 198.0,
+    "cost_ratio_mean": 1.0248466912940128,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 176.0,
+    "cost_ratio_mean": 1.0191206349548274,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.125
+  },
+  "target": "optimum",
+  "target_cost": 782.3970131192798,
+  "race": {
+   "classical": {
+    "median": 202.0,
+    "q99": 1371.7899999999984,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 133.0,
+    "q99": 793.5099999999995,
+    "unsolved": 0
+   },
+   "speedup_median": 1.518796992481203,
+   "speedup_q99": 1.7287620823934156
+  },
+  "seconds": 9.575683000000026
+ },
+ {
+  "family": "terrain",
+  "n_sites": 12,
+  "seed": 3,
+  "moves_K": 66,
+  "descent": {
+   "best_known": 712.0867410608537,
+   "top5pct_cost": 712.0867410608537,
+   "classical": {
+    "queries_median": 205.0,
+    "cost_ratio_mean": 1.0312758658836063,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 184.0,
+    "cost_ratio_mean": 1.0297531304332446,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.1141304347826086
+  },
+  "target": "optimum",
+  "target_cost": 712.0867417729407,
+  "race": {
+   "classical": {
+    "median": 213.0,
+    "q99": 1039.8199999999983,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 135.0,
+    "q99": 822.01,
+    "unsolved": 0
+   },
+   "speedup_median": 1.5777777777777777,
+   "speedup_q99": 1.2649724455906843
+  },
+  "seconds": 9.561009500000068
+ },
+ {
+  "family": "terrain",
+  "n_sites": 14,
+  "seed": 0,
+  "moves_K": 91,
+  "descent": {
+   "best_known": 827.3647334331392,
+   "top5pct_cost": 827.3647334331395,
+   "classical": {
+    "queries_median": 295.0,
+    "cost_ratio_mean": 1.0483266042855066,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 234.5,
+    "cost_ratio_mean": 1.049106840498721,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.2579957356076759
+  },
+  "target": "optimum",
+  "target_cost": 827.3647342605042,
+  "race": {
+   "classical": {
+    "median": 1599.0,
+    "q99": 8377.179999999997,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1365.0,
+    "q99": 8142.929999999995,
+    "unsolved": 0
+   },
+   "speedup_median": 1.1714285714285715,
+   "speedup_q99": 1.0287672864681388
+  },
+  "seconds": 14.616303300000027
+ },
+ {
+  "family": "terrain",
+  "n_sites": 14,
+  "seed": 1,
+  "moves_K": 91,
+  "descent": {
+   "best_known": 768.1503111994462,
+   "top5pct_cost": 768.1503111994464,
+   "classical": {
+    "queries_median": 305.5,
+    "cost_ratio_mean": 1.0222284946599658,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 226.0,
+    "cost_ratio_mean": 1.0204991533639465,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.3517699115044248
+  },
+  "target": "optimum",
+  "target_cost": 768.1503119675966,
+  "race": {
+   "classical": {
+    "median": 1405.0,
+    "q99": 10115.629999999997,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1182.5,
+    "q99": 7862.57,
+    "unsolved": 0
+   },
+   "speedup_median": 1.1881606765327695,
+   "speedup_q99": 1.286555159445321
+  },
+  "seconds": 12.896256199999925
+ },
+ {
+  "family": "terrain",
+  "n_sites": 14,
+  "seed": 2,
+  "moves_K": 91,
+  "descent": {
+   "best_known": 839.4116203653416,
+   "top5pct_cost": 839.4116203653418,
+   "classical": {
+    "queries_median": 290.5,
+    "cost_ratio_mean": 1.0297744697484827,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 216.5,
+    "cost_ratio_mean": 1.0266882438412936,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.3418013856812934
+  },
+  "target": "optimum",
+  "target_cost": 839.4116212047535,
+  "race": {
+   "classical": {
+    "median": 1440.5,
+    "q99": 6252.959999999989,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 987.5,
+    "q99": 5730.069999999992,
+    "unsolved": 0
+   },
+   "speedup_median": 1.4587341772151898,
+   "speedup_q99": 1.0912536845099619
+  },
+  "seconds": 13.031565999999998
+ },
+ {
+  "family": "terrain",
+  "n_sites": 14,
+  "seed": 3,
+  "moves_K": 91,
+  "descent": {
+   "best_known": 819.8611026177481,
+   "top5pct_cost": 819.8611026177481,
+   "classical": {
+    "queries_median": 284.0,
+    "cost_ratio_mean": 1.040505502708641,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 221.0,
+    "cost_ratio_mean": 1.0407231300430633,
+    "false_stop_rate": 0.01
+   },
+   "descent_speedup": 1.2850678733031675
+  },
+  "target": "optimum",
+  "target_cost": 819.8611034376094,
+  "race": {
+   "classical": {
+    "median": 659.0,
+    "q99": 3766.489999999997,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 418.5,
+    "q99": 2824.3599999999997,
+    "unsolved": 0
+   },
+   "speedup_median": 1.5746714456391875,
+   "speedup_q99": 1.3335729156339835
+  },
+  "seconds": 12.352236199999993
+ },
+ {
+  "family": "terrain",
+  "n_sites": 16,
+  "seed": 0,
+  "moves_K": 120,
+  "descent": {
+   "best_known": 853.235889868623,
+   "top5pct_cost": 853.235889868623,
+   "classical": {
+    "queries_median": 404.0,
+    "cost_ratio_mean": 1.0699658467125825,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 268.5,
+    "cost_ratio_mean": 1.0707977355623965,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.504655493482309
+  },
+  "target": "top 5%",
+  "target_cost": 853.2358907218589,
+  "race": {
+   "classical": {
+    "median": 1189.5,
+    "q99": 7481.259999999993,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 821.0,
+    "q99": 6681.129999999997,
+    "unsolved": 0
+   },
+   "speedup_median": 1.44884287454324,
+   "speedup_q99": 1.1197596813712645
+  },
+  "seconds": 14.746971099999996
+ },
+ {
+  "family": "terrain",
+  "n_sites": 16,
+  "seed": 1,
+  "moves_K": 120,
+  "descent": {
+   "best_known": 834.6596535292285,
+   "top5pct_cost": 834.6596535292288,
+   "classical": {
+    "queries_median": 399.5,
+    "cost_ratio_mean": 1.0225563213696112,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 277.0,
+    "cost_ratio_mean": 1.0227595470279651,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.4422382671480145
+  },
+  "target": "top 5%",
+  "target_cost": 834.6596543638885,
+  "race": {
+   "classical": {
+    "median": 4052.5,
+    "q99": 29190.25999999999,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 2758.0,
+    "q99": 15631.379999999988,
+    "unsolved": 0
+   },
+   "speedup_median": 1.469361856417694,
+   "speedup_q99": 1.8674141374593933
+  },
+  "seconds": 21.37984300000005
+ },
+ {
+  "family": "terrain",
+  "n_sites": 16,
+  "seed": 2,
+  "moves_K": 120,
+  "descent": {
+   "best_known": 951.7527352563097,
+   "top5pct_cost": 951.7527352563098,
+   "classical": {
+    "queries_median": 412.0,
+    "cost_ratio_mean": 1.0247199466747072,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 281.5,
+    "cost_ratio_mean": 1.025911895421596,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.463587921847247
+  },
+  "target": "top 5%",
+  "target_cost": 951.7527362080626,
+  "race": {
+   "classical": {
+    "median": 2613.0,
+    "q99": 22919.839999999993,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1927.0,
+    "q99": 14027.209999999995,
+    "unsolved": 0
+   },
+   "speedup_median": 1.3559937727036844,
+   "speedup_q99": 1.6339557189205836
+  },
+  "seconds": 17.76019150000002
+ },
+ {
+  "family": "terrain",
+  "n_sites": 16,
+  "seed": 3,
+  "moves_K": 120,
+  "descent": {
+   "best_known": 857.5709002416631,
+   "top5pct_cost": 857.5709002416631,
+   "classical": {
+    "queries_median": 414.0,
+    "cost_ratio_mean": 1.0401649069653094,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 270.5,
+    "cost_ratio_mean": 1.0352618168260885,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.5304990757855823
+  },
+  "target": "top 5%",
+  "target_cost": 857.5709010992341,
+  "race": {
+   "classical": {
+    "median": 1187.0,
+    "q99": 6504.4499999999925,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 541.0,
+    "q99": 3533.02,
+    "unsolved": 0
+   },
+   "speedup_median": 2.1940850277264325,
+   "speedup_q99": 1.8410453379828002
+  },
+  "seconds": 14.271793300000013
+ },
+ {
+  "family": "terrain",
+  "n_sites": 18,
+  "seed": 0,
+  "moves_K": 153,
+  "descent": {
+   "best_known": 869.4187464784375,
+   "top5pct_cost": 869.4187464784376,
+   "classical": {
+    "queries_median": 535.5,
+    "cost_ratio_mean": 1.0823698776746302,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 347.0,
+    "cost_ratio_mean": 1.076683086981076,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.543227665706052
+  },
+  "target": "top 5%",
+  "target_cost": 869.4187473478564,
+  "race": {
+   "classical": {
+    "median": 1217.5,
+    "q99": 7713.019999999999,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 701.5,
+    "q99": 4633.899999999996,
+    "unsolved": 0
+   },
+   "speedup_median": 1.735566642908054,
+   "speedup_q99": 1.6644770064092893
+  },
+  "seconds": 15.892001700000037
+ },
+ {
+  "family": "terrain",
+  "n_sites": 18,
+  "seed": 1,
+  "moves_K": 153,
+  "descent": {
+   "best_known": 880.0512496411811,
+   "top5pct_cost": 880.0512496411811,
+   "classical": {
+    "queries_median": 515.0,
+    "cost_ratio_mean": 1.062706842530383,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 331.0,
+    "cost_ratio_mean": 1.060587574611656,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.555891238670695
+  },
+  "target": "top 5%",
+  "target_cost": 880.0512505212324,
+  "race": {
+   "classical": {
+    "median": 2408.5,
+    "q99": 14116.259999999986,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1391.0,
+    "q99": 8883.529999999984,
+    "unsolved": 0
+   },
+   "speedup_median": 1.731488138030194,
+   "speedup_q99": 1.5890372408265645
+  },
+  "seconds": 17.593275399999925
+ },
+ {
+  "family": "terrain",
+  "n_sites": 18,
+  "seed": 2,
+  "moves_K": 153,
+  "descent": {
+   "best_known": 953.7963567899649,
+   "top5pct_cost": 953.7963567899651,
+   "classical": {
+    "queries_median": 550.0,
+    "cost_ratio_mean": 1.032763770394362,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 347.5,
+    "cost_ratio_mean": 1.0318645860049513,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.5827338129496402
+  },
+  "target": "top 5%",
+  "target_cost": 953.7963577437615,
+  "race": {
+   "classical": {
+    "median": 3259.0,
+    "q99": 26347.68999999994,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 2017.5,
+    "q99": 11331.149999999992,
+    "unsolved": 0
+   },
+   "speedup_median": 1.615365551425031,
+   "speedup_q99": 2.3252441279128737
+  },
+  "seconds": 20.378215599999976
+ },
+ {
+  "family": "terrain",
+  "n_sites": 18,
+  "seed": 3,
+  "moves_K": 153,
+  "descent": {
+   "best_known": 934.6028581128181,
+   "top5pct_cost": 934.6028581128182,
+   "classical": {
+    "queries_median": 593.0,
+    "cost_ratio_mean": 1.0331833577341456,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 348.0,
+    "cost_ratio_mean": 1.0341307309455292,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.7040229885057472
+  },
+  "target": "top 5%",
+  "target_cost": 934.6028590474211,
+  "race": {
+   "classical": {
+    "median": 2519.0,
+    "q99": 20214.64999999997,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1508.0,
+    "q99": 9064.779999999972,
+    "unsolved": 0
+   },
+   "speedup_median": 1.6704244031830238,
+   "speedup_q99": 2.230021026434181
+  },
+  "seconds": 19.79386969999996
+ },
+ {
+  "family": "terrain",
+  "n_sites": 20,
+  "seed": 0,
+  "moves_K": 190,
+  "descent": {
+   "best_known": 908.8227771264784,
+   "top5pct_cost": 908.8227771264786,
+   "classical": {
+    "queries_median": 692.5,
+    "cost_ratio_mean": 1.0647132383348368,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 398.5,
+    "cost_ratio_mean": 1.0674129899452802,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.7377666248431618
+  },
+  "target": "top 5%",
+  "target_cost": 908.8227780353014,
+  "race": {
+   "classical": {
+    "median": 3334.0,
+    "q99": 18126.519999999982,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 2053.0,
+    "q99": 10614.939999999966,
+    "unsolved": 0
+   },
+   "speedup_median": 1.6239649293716512,
+   "speedup_q99": 1.7076422476245783
+  },
+  "seconds": 21.977339099999995
+ },
+ {
+  "family": "terrain",
+  "n_sites": 20,
+  "seed": 1,
+  "moves_K": 190,
+  "descent": {
+   "best_known": 914.997053911883,
+   "top5pct_cost": 914.997053911883,
+   "classical": {
+    "queries_median": 729.0,
+    "cost_ratio_mean": 1.066600138260041,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 390.0,
+    "cost_ratio_mean": 1.0594597616281338,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.8692307692307693
+  },
+  "target": "top 5%",
+  "target_cost": 914.9970548268801,
+  "race": {
+   "classical": {
+    "median": 3155.0,
+    "q99": 16643.28,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1549.0,
+    "q99": 7595.37,
+    "unsolved": 0
+   },
+   "speedup_median": 2.0367979341510654,
+   "speedup_q99": 2.191240189747175
+  },
+  "seconds": 20.314841799999954
+ },
+ {
+  "family": "terrain",
+  "n_sites": 20,
+  "seed": 2,
+  "moves_K": 190,
+  "descent": {
+   "best_known": 1037.9880939703023,
+   "top5pct_cost": 1037.9880939703025,
+   "classical": {
+    "queries_median": 699.0,
+    "cost_ratio_mean": 1.0357671824358097,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 394.5,
+    "cost_ratio_mean": 1.0436917584200265,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.7718631178707225
+  },
+  "target": "top 5%",
+  "target_cost": 1037.9880950082907,
+  "race": {
+   "classical": {
+    "median": 6954.0,
+    "q99": 58478.02999999987,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 4245.0,
+    "q99": 27516.739999999983,
+    "unsolved": 0
+   },
+   "speedup_median": 1.6381625441696113,
+   "speedup_q99": 2.1251801630571028
+  },
+  "seconds": 30.87560069999995
+ },
+ {
+  "family": "terrain",
+  "n_sites": 20,
+  "seed": 3,
+  "moves_K": 190,
+  "descent": {
+   "best_known": 945.1359068721496,
+   "top5pct_cost": 945.1359068721499,
+   "classical": {
+    "queries_median": 761.0,
+    "cost_ratio_mean": 1.0311904322677792,
+    "false_stop_rate": 0.0
+   },
+   "quantum": {
+    "queries_median": 420.5,
+    "cost_ratio_mean": 1.0335850613001882,
+    "false_stop_rate": 0.0
+   },
+   "descent_speedup": 1.8097502972651605
+  },
+  "target": "top 5%",
+  "target_cost": 945.1359078172859,
+  "race": {
+   "classical": {
+    "median": 3330.5,
+    "q99": 20124.879999999997,
+    "unsolved": 0
+   },
+   "quantum": {
+    "median": 1913.0,
+    "q99": 10640.279999999999,
+    "unsolved": 0
+   },
+   "speedup_median": 1.7409827496079457,
+   "speedup_q99": 1.8913863169014349
+  },
+  "seconds": 22.107197799999994
+ }
+]
