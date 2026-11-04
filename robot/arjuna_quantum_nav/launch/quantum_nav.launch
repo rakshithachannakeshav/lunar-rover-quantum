@@ -10,6 +10,9 @@
 
   Send a goal with RViz "2D Nav Goal", or pass goal_x:=1.0 goal_y:=0.0 to start at once.
   Add start_x:= start_y:= to drive to a start endpoint first, then on to the goal.
+
+  Web control (web/rover.html): add web:=true to start rosbridge on port 9090
+  (needs: sudo apt install ros-melodic-rosbridge-server).
 -->
 <launch>
   <arg name="algorithm" default="auto"/>          <!-- auto | astar | dijkstra | qaoa -->
@@ -31,6 +34,12 @@
   <arg name="avoid_obstacles" default="true"/>    <!-- false: old stop-and-wait -->
   <arg name="avoid_stop_distance" default="0.40"/> <!-- m: obstacle this close ahead -> avoid -->
   <arg name="avoid_side_clearance" default="0.32"/> <!-- m: veer away from a side this close -->
+  <arg name="web" default="false"/>               <!-- true: rosbridge for web/rover.html -->
+  <arg name="web_port" default="9090"/>
+
+  <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch" if="$(arg web)">
+    <arg name="port" value="$(arg web_port)"/>
+  </include>
 
   <node pkg="arjuna_quantum_nav" type="quantum_nav_node.py" name="quantum_nav" output="screen">
     <param name="algorithm" value="$(arg algorithm)"/>

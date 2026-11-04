@@ -420,6 +420,10 @@ cd web && python -m http.server 8080     # open http://localhost:8080/index.html
 Three.js preview: rover model, rocks, terrain, drive with WASD, Patrol AI tab,
 Orbit/Top camera. Standalone — not connected to ROS or Gazebo.
 
+`web/rover.html` is different: it controls the **real Arjuna rover** over rosbridge. You
+click a goal or draw a route, and it shows the live pose, LiDAR and path, with a STOP button.
+See [`robot/arjuna_quantum_nav/README.md`](robot/arjuna_quantum_nav/README.md).
+
 ---
 
 ## 6. Interfaces / data contracts

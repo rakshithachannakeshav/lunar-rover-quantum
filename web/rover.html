@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Arjuna Rover Control</title>
+  <meta name="description"
+    content="Send a goal or a hand-drawn route to the real Arjuna rover over rosbridge, and watch it drive." />
+  <style>
+    :root {
+      --bg: #04040a;
+      --surface: rgba(8, 10, 20, 0.92);
+      --surface-hi: rgba(18, 22, 40, 0.95);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-hi: rgba(255, 255, 255, 0.16);
+      --text: #dde1ee;
+      --muted: #8a90ad;
+      --accent: #f59e0b;
+      --accent-dim: rgba(245, 158, 11, 0.14);
+      --success: #34d399;
+      --danger: #f87171;
+      --blue: #60a5fa;
+      --font: system-ui, -apple-system, "Segoe UI", sans-serif;
+      --mono: ui-monospace, "Cascadia Mono", Consolas, monospace;
+      --radius: 12px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: var(--bg); color: var(--text); font-family: var(--font); font-size: 14px; }
+
+    #map { position: fixed; inset: 0; width: 100%; height: 100%; display: block; cursor: crosshair; touch-action: none; }
+
+    .panel { position: fixed; background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px; backdrop-filter: blur(16px); }
+    #side { top: 16px; left: 16px; width: 300px; max-height: calc(100% - 32px); overflow-y: auto; display: flex; flex-direction: column; gap: 14px; }
+    h1 { font-size: 16px; font-weight: 600; }
+    h2 { font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin-bottom: 6px; }
+    .row { display: flex; gap: 6px; align-items: center; }
+    .row > * { flex: 1; }
+    input, select { width: 100%; background: var(--surface-hi); color: var(--text); border: 1px solid var(--border-hi); border-radius: 8px; padding: 7px 9px; font: inherit; font-size: 13px; }
+    button { background: var(--surface-hi); color: var(--text); border: 1px solid var(--border-hi); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 13px; cursor: pointer; }
+    button:hover:not(:disabled) { border-color: var(--accent); }
+    button:disabled { opacity: .4; cursor: not-allowed; }
+    button.on { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+    button.primary { background: var(--accent); border-color: var(--accent); color: #1a1205; font-weight: 600; }
+    #stop { position: fixed; right: 16px; bottom: 16px; width: 120px; height: 120px; border-radius: 50%; background: #b91c1c; border: 4px solid #fecaca; color: #fff; font-size: 22px; font-weight: 700; letter-spacing: .05em; box-shadow: 0 6px 30px rgba(220, 38, 38, .45); }
+    #stop:hover { background: #dc2626; }
+    .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: var(--danger); margin-right: 6px; }
+    .dot.ok { background: var(--success); }
+    .mono { font-family: var(--mono); font-size: 12px; }
+    .muted { color: var(--muted); font-size: 12px; line-height: 1.45; }
+    #status { padding: 8px 10px; border-radius: 8px; background: var(--surface-hi); border: 1px solid var(--border); min-height: 34px; word-break: break-word; }
+    #status.warn { border-color: var(--danger); color: var(--danger); }
+    #points { list-style: none; max-height: 140px; overflow-y: auto; }
+    #points li { display: flex; justify-content: space-between; padding: 2px 0; }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { text-align: left; padding: 3px 4px; font-size: 12px; }
+    th { color: var(--muted); font-weight: 500; }
+    tr.chosen td { color: var(--accent); }
+    details summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+    details .grid { display: grid; grid-template-columns: 1fr; gap: 6px; margin-top: 8px; }
+    label { font-size: 12px; color: var(--muted); display: block; }
+    #zoom { position: fixed; right: 16px; top: 16px; display: flex; flex-direction: column; gap: 6px; }
+    #zoom button { width: 40px; height: 40px; padding: 0; font-size: 16px; }
+    #hover { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); padding: 6px 10px; }
+
+    @media (max-width: 640px) {
+      #side { top: auto; bottom: 0; left: 0; right: 0; width: auto; max-height: 48%; border-radius: var(--radius) var(--radius) 0 0; }
+      #stop { width: 84px; height: 84px; font-size: 16px; top: 16px; bottom: auto; right: 72px; }
+      #hover { display: none; }
+    }
+  </style>
+</head>
+
+<body>
+  <canvas id="map"></canvas>
+
+  <div id="side" class="panel">
+    <div>
+      <h1>Arjuna rover control</h1>
+      <p class="muted" style="margin-top:4px">Pick a goal or draw a route, then press Send. The rover steers round
+        obstacles on the way.</p>
+    </div>
+
+    <section>
+      <h2>Connection</h2>
+      <div class="row">
+        <input id="url" class="mono" value="ws://192.168.1.10:9090" spellcheck="false" />
+        <button id="connect" style="flex:0 0 auto">Connect</button>
+      </div>
+      <p class="muted" style="margin-top:6px"><span id="conn-dot" class="dot"></span><span id="conn-text">Not connected</span></p>
+    </section>
+
+    <section>
+      <h2>Rover status</h2>
+      <div id="status" class="mono">—</div>
+      <p class="muted mono" id="pose" style="margin-top:6px">pose: —</p>
+    </section>
+
+    <section>
+      <h2>Mode</h2>
+      <div class="row">
+        <button id="mode-goal" class="on">Goal</button>
+        <button id="mode-route">Route</button>
+      </div>
+      <p class="muted" id="mode-help" style="margin-top:6px"></p>
+    </section>
+
+    <section>
+      <h2 id="points-title">Goal</h2>
+      <ul id="points" class="mono"></ul>
+      <div class="row" style="margin-top:8px">
+        <button id="undo">Undo</button>
+        <button id="clear">Clear</button>
+        <button id="send" class="primary">Send</button>
+      </div>
+    </section>
+
+    <section id="report-box" hidden>
+      <h2>Last plan</h2>
+      <table id="report"></table>
+    </section>
+
+    <details>
+      <summary>Topics and settings</summary>
+      <div class="grid">
+        <label>Pose topic<input id="t-pose" class="mono" value="/robot_pose_ekf/odom_combined" /></label>
+        <label>Pose type
+          <select id="t-pose-type">
+            <option value="geometry_msgs/PoseWithCovarianceStamped">PoseWithCovarianceStamped</option>
+            <option value="nav_msgs/Odometry">Odometry</option>
+          </select>
+        </label>
+        <label>Scan topic<input id="t-scan" class="mono" value="/scan" /></label>
+        <label>Laser yaw offset (deg)<input id="t-yaw" class="mono" type="number" value="0" step="180" /></label>
+        <label>Map topic<input id="t-map" class="mono" value="/map" /></label>
+        <label>Goal topic<input id="t-goal" class="mono" value="/move_base_simple/goal" /></label>
+        <label>Node namespace<input id="t-ns" class="mono" value="/quantum_nav" /></label>
+        <label>Frame id<input id="t-frame" class="mono" value="map" /></label>
+        <p class="muted">Changes apply on the next Connect.</p>
+      </div>
+    </details>
+  </div>
+
+  <div id="zoom">
+    <button id="zoom-in" title="Zoom in">+</button>
+    <button id="zoom-out" title="Zoom out">−</button>
+    <button id="follow" title="Keep the rover centred">◎</button>
+    <button id="fit" title="Fit the map">⤢</button>
+  </div>
+
+  <div id="hover" class="panel mono muted">x —, y —</div>
+  <button id="stop" title="Stop the rover (Space)">STOP</button>
+
+  <script src="js/rover_control.js"></script>
+</body>
+
+</html>

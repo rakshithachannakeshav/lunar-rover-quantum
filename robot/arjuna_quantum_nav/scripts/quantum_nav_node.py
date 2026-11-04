@@ -8,7 +8,9 @@ Runs ON the Jetson Nano alongside the kit's own bringup, which already provides:
     /map                               map_server (optional)
     /cmd_vel  -> Arjuna_ticks_pub.py   turns Twist into STS servo wheel speeds
 
-This node:  goal (RViz "2D Nav Goal" or ~goal_x/~goal_y, optionally from ~start_x/~start_y)
+This node:  goal (RViz "2D Nav Goal" or ~goal_x/~goal_y, optionally from ~start_x/~start_y),
+            or a route (nav_msgs/Path on ~route, e.g. clicked on web/rover.html):
+            the rover drives through the route points in order, one planned leg each
             -> plan on the map with the chosen algorithm ("auto" runs all three
                and drives the best: lowest energy, ties -> fastest)
             -> follow the path on the fused pose, publishing /cmd_vel
@@ -30,7 +32,7 @@ import rospy
 from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import Imu, LaserScan
-from std_msgs.msg import Float64, String
+from std_msgs.msg import Empty, Float64, String
 
 import nav_core
 
@@ -108,6 +110,8 @@ class QuantumNavNode(object):
         self.avoiding_since = None
         self._last_index = 0
         self.legs = []            # endpoints still to visit after the current goal
+        self.cancel = False       # set by ~cancel: stop and forget the goal/route
+        self.last_outcome = None  # how the last run ended, kept in the idle status
         self.last_cmd = (0.0, 0.0)
         self.status = "idle"
 
@@ -129,6 +133,8 @@ class QuantumNavNode(object):
         rospy.Subscriber(p("~imu_topic", "/imu/data"), Imu, self._on_imu, queue_size=1)
         rospy.Subscriber(p("~sonar_topic", "/distance"), Float64, self._on_sonar, queue_size=1)
         rospy.Subscriber(p("~goal_topic", "/move_base_simple/goal"), PoseStamped, self._on_goal, queue_size=1)
+        rospy.Subscriber(p("~route_topic", "~route"), Path, self._on_route, queue_size=1)
+        rospy.Subscriber(p("~cancel_topic", "~cancel"), Empty, self._on_cancel, queue_size=1)
 
         if rospy.has_param("~goal_x") and rospy.has_param("~goal_y"):
             goal = (float(p("~goal_x")), float(p("~goal_y")))
@@ -183,7 +189,27 @@ class QuantumNavNode(object):
             self.goal = (msg.pose.position.x, msg.pose.position.y)
             self.legs = []  # an RViz goal replaces any start->goal mission
             self.new_goal = True
+            self.cancel = False
         rospy.loginfo("New goal (%.2f, %.2f)", self.goal[0], self.goal[1])
+
+    def _on_route(self, msg):
+        """A user-chosen route: visit each point in order (each leg is planned)."""
+        points = [(ps.pose.position.x, ps.pose.position.y) for ps in msg.poses]
+        if not points:
+            rospy.logwarn("Ignoring an empty route")
+            return
+        with self.lock:
+            self.goal, self.legs = points[0], points[1:]
+            self.new_goal = True
+            self.cancel = False
+        rospy.loginfo("New route with %d points: %s", len(points),
+                      " -> ".join("(%.2f, %.2f)" % pt for pt in points))
+
+    def _on_cancel(self, msg):
+        with self.lock:
+            self.cancel = True
+            self.new_goal = False
+        rospy.logwarn("Cancel received: stopping")
 
     # ── helpers ───────────────────────────────────────────────────────────────
     def _publish_cmd(self, linear, angular):
@@ -331,8 +357,29 @@ class QuantumNavNode(object):
                 self.new_goal = False
                 scan, sonar = self.scan, self.sonar_cm
                 roll, pitch = self.roll, self.pitch
+                cancel, self.cancel = self.cancel, False
+                if cancel:
+                    self.goal, self.legs = None, []
 
+            if cancel:
+                self._publish_cmd(0.0, 0.0)
+                if self.follower is not None and not self.follower.done:
+                    self._log_run("cancelled")
+                self.follower = None
+                self.path_pub.publish(self._to_path_msg([]))
+                self.last_outcome = "stopped by user"
+
+            if new_goal and goal is not None:
+                self.last_outcome = None
             status = self._tick(pose, pose_age, goal, new_goal, scan, sonar, roll, pitch, dt, start)
+            # One-tick outcomes ("goal reached", "ABORTED: ...", "no path") would vanish on the
+            # next tick; keep the latest in the idle status so slow subscribers still see it.
+            if status == "idle":
+                if self.last_outcome:
+                    status = "idle (last: %s)" % self.last_outcome
+            elif self.follower is None or self.follower.done:
+                if not status.startswith("waiting"):
+                    self.last_outcome = status
             if status != self.status:
                 rospy.loginfo("status: %s", status)
                 self.status = status
@@ -407,9 +454,9 @@ class QuantumNavNode(object):
                 if self.legs and not self.new_goal:
                     self.goal = self.legs.pop(0)
                     self.new_goal = True
-                    rospy.loginfo("Start endpoint reached; heading for goal (%.2f, %.2f)",
-                                  self.goal[0], self.goal[1])
-                    return "start reached"
+                    rospy.loginfo("Waypoint reached; heading for (%.2f, %.2f), %d more after it",
+                                  self.goal[0], self.goal[1], len(self.legs))
+                    return "waypoint reached (%d left)" % (len(self.legs) + 1)
             return "goal reached"
         self._publish_cmd(linear, angular)
         self.meter.update(linear, angular, pitch, dt)
