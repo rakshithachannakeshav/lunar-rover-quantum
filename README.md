@@ -637,8 +637,5 @@ Beyond point-to-point path selection, the project evaluated three combinatorial 
 
 - **Project**: Quantum-Assisted Energy Optimization for Autonomous Lunar Rover Navigation
 - **Context**: Final-Year Capstone Engineering Project (B.E. / B.Tech Major Project, October 2026)
-- **Team Members**:
-  - **Rakshitha Channakeshav** (`rakshithachannakeshav@gmail.com`)
-  - **Monis** (`monis@example.com`)
-  - **Sharanya** (`sharanya@example.com`)
+
 - **Focus**: ROS 2 Jazzy & Gazebo Harmonic Lunar Rover Simulation, Terrain Mapping, Hybrid Classical/QAOA Planning, and Defensible Benchmark Evaluation.
