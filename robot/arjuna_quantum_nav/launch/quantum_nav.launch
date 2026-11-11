@@ -13,6 +13,9 @@
 
   Web control (web/rover.html): add web:=true to start rosbridge on port 9090
   (needs: sudo apt install ros-melodic-rosbridge-server).
+
+  The lunar arena (craters, rocks, OAK-D terrain detection) is normally started with
+  arena.launch, which sets the arena arguments below and also starts the detector.
 -->
 <launch>
   <arg name="algorithm" default="auto"/>          <!-- auto | astar | dijkstra | qaoa -->
@@ -20,7 +23,11 @@
   <arg name="max_angular" default="0.6"/>         <!-- rad/s -->
   <arg name="use_map" default="true"/>            <!-- false: open ground + live LiDAR -->
   <arg name="robot_radius" default="0.2"/>        <!-- m, obstacle inflation -->
-  <arg name="laser_yaw_offset_deg" default="0.0"/> <!-- set 180 if lidar 0° faces backwards -->
+  <arg name="plan_resolution" default="0.1"/>     <!-- m, planning grid cell -->
+  <arg name="path_spacing" default="0.3"/>        <!-- m between waypoints along the planned path -->
+  <arg name="waypoint_tolerance" default="0.2"/>  <!-- m: waypoint counts as reached -->
+  <arg name="goal_tolerance" default="0.15"/>
+  <arg name="laser_yaw_offset_deg" default="180.0"/> <!-- this rover: RPLidar is mounted backwards -->
   <arg name="pitch_sign" default="1.0"/>          <!-- -1 if nose-up reads negative -->
   <arg name="max_slope_deg" default="15.0"/>      <!-- planner refuses steeper slopes -->
   <arg name="elevation_csv" default=""/>          <!-- optional height map (see README) -->
@@ -40,6 +47,17 @@
   <include file="$(find rosbridge_server)/launch/rosbridge_websocket.launch" if="$(arg web)">
     <arg name="port" value="$(arg web_port)"/>
   </include>
+  <arg name="use_craters" default="true"/>        <!-- camera terrain (/terrain/detections) + IMU bump -->
+  <arg name="crater_margin" default="0.03"/>      <!-- m kept clear beyond robot_radius round craters / rocks -->
+  <arg name="bump_pitch_deg" default="2.5"/>      <!-- pitch jolt = wheel on a crater rim; 0 = off
+                                                       (set 0 on runs with ramps that start abruptly) -->
+  <arg name="arena_width" default=""/>            <!-- m: walled arena, used when there is no /map -->
+  <arg name="arena_height" default=""/>
+  <arg name="arena_x0" default="0.0"/>            <!-- m: its origin corner in the map frame -->
+  <arg name="arena_y0" default="0.0"/>
+  <arg name="soft_margin" default="0.0"/>         <!-- m: extra path cost band beyond the clearance (0.1 in the arena:
+                                                       keeps paths off crater rims / rocks where there is room) -->
+  <arg name="lidar_stop_distance" default="0.25"/> <!-- m: stop-and-wait distance when avoid_obstacles is false -->
 
   <node pkg="arjuna_quantum_nav" type="quantum_nav_node.py" name="quantum_nav" output="screen">
     <param name="algorithm" value="$(arg algorithm)"/>
@@ -47,6 +65,10 @@
     <param name="max_angular" value="$(arg max_angular)"/>
     <param name="use_map" value="$(arg use_map)"/>
     <param name="robot_radius" value="$(arg robot_radius)"/>
+    <param name="plan_resolution" value="$(arg plan_resolution)"/>
+    <param name="path_spacing" value="$(arg path_spacing)"/>
+    <param name="waypoint_tolerance" value="$(arg waypoint_tolerance)"/>
+    <param name="goal_tolerance" value="$(arg goal_tolerance)"/>
     <param name="laser_yaw_offset_deg" value="$(arg laser_yaw_offset_deg)"/>
     <param name="pitch_sign" value="$(arg pitch_sign)"/>
     <param name="max_slope_deg" value="$(arg max_slope_deg)"/>
@@ -70,7 +92,7 @@
     <param name="cmd_vel_topic" value="/cmd_vel"/>
 
     <!-- safety -->
-    <param name="lidar_stop_distance" value="0.25"/>
+    <param name="lidar_stop_distance" value="$(arg lidar_stop_distance)"/>
     <param name="sonar_stop_cm" value="20.0"/>
     <param name="max_tilt_deg" value="20.0"/>
     <param name="pose_timeout" value="0.6"/>
@@ -88,5 +110,20 @@
     <param name="max_stuck_replans" value="3"/>
     <param name="replan_after_detour" value="true"/>
     <param name="avoid_timeout" value="25.0"/>
+
+    <!-- terrain from the OAK-D (crater_detector.launch) + IMU bump on crater rims -->
+    <param name="use_craters" value="$(arg use_craters)"/>
+    <param name="terrain_topic" value="/terrain/detections"/>
+    <param name="crater_margin" value="$(arg crater_margin)"/>
+    <param name="bump_pitch_deg" value="$(arg bump_pitch_deg)"/>
+    <param name="crater_backup_distance" value="0.15"/>   <!-- m reversed after a bump -->
+    <param name="bump_crater_radius" value="0.20"/>       <!-- m: crater assumed at a bump, starting at the rim -->
+    <param name="arena_width" value="$(arg arena_width)" if="$(eval arg('arena_width') != '')"/>
+    <param name="arena_height" value="$(arg arena_height)" if="$(eval arg('arena_height') != '')"/>
+    <param name="arena_x0" value="$(arg arena_x0)"/>
+    <param name="arena_y0" value="$(arg arena_y0)"/>
+    <param name="wall_margin" value="0.04"/>              <!-- m: border wall, never driven on -->
+    <param name="soft_margin" value="$(arg soft_margin)"/>
+    <param name="min_clearance_scale" value="0.8"/>       <!-- no path? retry with down to 80% of the clearance -->
   </node>
 </launch>

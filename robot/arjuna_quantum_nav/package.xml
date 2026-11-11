@@ -15,4 +15,8 @@
   <exec_depend>geometry_msgs</exec_depend>
   <exec_depend>nav_msgs</exec_depend>
   <exec_depend>sensor_msgs</exec_depend>
+  <exec_depend>visualization_msgs</exec_depend>
+  <exec_depend>map_server</exec_depend>
+  <!-- terrain detection also needs python3-numpy and depthai (OAK-D) on the Jetson; both are optional:
+       without them the navigator runs on LiDAR and IMU alone. -->
 </package>

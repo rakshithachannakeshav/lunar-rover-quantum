@@ -16,12 +16,18 @@ This node:  goal (RViz "2D Nav Goal" or ~goal_x/~goal_y, optionally from ~start_
             -> follow the path on the fused pose, publishing /cmd_vel
             -> obstacle ahead (LiDAR/sonar): turn towards the open side, drive past,
                then replan from there with the obstacle marked on the grid
+            -> terrain (OAK-D depth camera via crater_detector_node.py: crater rims, rocks, the
+               border wall, no-floor): kept in the world frame for the whole run, merged with
+               the LiDAR obstacles on the grid; a new one on the remaining path -> replan.
+               A wheel climbing a crater rim shows as a short pitch bump on the IMU: stop,
+               back out, mark the crater edge, replan.
             -> stops for: stale pose, excessive tilt, stuck avoiding too long
             -> logs each run (planned + measured energy, climb, descent) to CSV.
 
 Planning/control logic lives in nav_core.py (pure Python 3.6, unit-tested).
 """
 
+import collections
 import json
 import math
 import os
@@ -29,10 +35,11 @@ import threading
 import time
 
 import rospy
-from geometry_msgs.msg import PoseStamped, PoseWithCovarianceStamped, Twist
+from geometry_msgs.msg import Point, PoseArray, PoseStamped, PoseWithCovarianceStamped, Twist
 from nav_msgs.msg import OccupancyGrid, Odometry, Path
 from sensor_msgs.msg import Imu, LaserScan
 from std_msgs.msg import Empty, Float64, String
+from visualization_msgs.msg import Marker, MarkerArray
 
 import nav_core
 
@@ -77,6 +84,48 @@ class QuantumNavNode(object):
             travel=float(p("~no_progress_travel", 3.0)))
         self.max_stuck_replans = int(p("~max_stuck_replans", 3))
         self.stuck_replans = 0
+        # terrain: crater rims / rocks / border / no-floor from crater_detector_node.py, plus an
+        # IMU backup that feels a wheel climbing a crater rim
+        self.use_craters = bool(p("~use_craters", True))
+        self.crater_margin = float(p("~crater_margin", 0.03))        # m beyond robot_radius
+        self.terrain_topic = p("~terrain_topic", "/terrain/detections")
+        self.crater_topic = p("~crater_topic", "")   # legacy PoseArray of crater cells, "" = off
+        self.detection_delay = float(p("~detection_delay", 0.15))    # s from image to message
+        self.bump_pitch_deg = float(p("~bump_pitch_deg", 2.5))       # 0 = bump detector off
+        self.bump_roll_deg = float(p("~bump_roll_deg", 3.0))
+        self.crater_backup = float(p("~crater_backup_distance", 0.15))
+        # a bump marks a crater-sized disc: its near edge is where the wheel touched the rim
+        self.bump_crater_radius = float(p("~bump_crater_radius", 0.20))  # assumed crater radius, m
+        self.bump_contact_ahead = float(p("~bump_contact_ahead", 0.16))  # front wheel contact, m
+        self.max_bumps = int(p("~max_bumps", 4))                     # per goal, then give up
+        self.terrain = nav_core.TerrainMap(confirm=dict(
+            crater=int(p("~confirm_crater", 2)), rock=int(p("~confirm_rock", 2)),
+            border=int(p("~confirm_border", 2)), nofloor=int(p("~confirm_nofloor", 3))))
+        self.legacy_craters = nav_core.CraterMap()
+        self.pending_changes = []   # new terrain not yet checked against the path
+        self.bumps = nav_core.BumpDetector(self.bump_pitch_deg, self.bump_roll_deg)
+        self.bump_event = None
+        self.bump_count = 0
+        self.backing = None         # (start_x, start_y, t0) while reversing out of a bump
+        self.pose_history = collections.deque(maxlen=200)   # (time, pose) for the camera delay
+        self.terrain_published = -1
+        self.path_spacing = float(p("~path_spacing", 0.3))   # waypoint spacing along the path, m
+        self.grid_size = float(p("~grid_size", 20.0))        # side of the open-ground grid, m
+        # the arena (used when there is no /map): size and the corner at (arena_x0, arena_y0);
+        # outside it, and a wall_margin strip inside it, is never planned
+        self.arena = None
+        if rospy.has_param("~arena_width") and rospy.has_param("~arena_height"):
+            self.arena = (float(p("~arena_x0", 0.0)), float(p("~arena_y0", 0.0)),
+                          float(p("~arena_width")), float(p("~arena_height")))
+        self.wall_margin = float(p("~wall_margin", 0.04))
+        if self.arena is not None:
+            x0, y0, w, h = self.arena
+            self.terrain.bounds = (x0, y0, x0 + w, y0 + h)    # drop detections off the table
+        self.edge_stop = float(p("~edge_stop", 0.06))          # inside the arena edge, m: stop here
+        self.soft_margin = float(p("~soft_margin", 0.0))       # extra-cost band beyond the clearance, m
+        self.soft_weight = float(p("~soft_weight", 1.5))
+        # no path at full clearance: retry squeezing closer, down to this fraction of it
+        self.min_clearance_scale = float(p("~min_clearance_scale", 0.8))
         self.rate_hz = float(p("~rate", 10.0))
         self.log_csv = os.path.expanduser(p("~log_csv", "~/.ros/quantum_nav_runs.csv"))
         self.frame_id = p("~frame_id", "map")
@@ -121,6 +170,8 @@ class QuantumNavNode(object):
                                    for a in nav_core.ALGORITHMS)
         self.report_pub = rospy.Publisher("~report", String, queue_size=1, latch=True)
         self.status_pub = rospy.Publisher("~status", String, queue_size=1)
+        self.terrain_pub = rospy.Publisher("~terrain", String, queue_size=1, latch=True)
+        self.marker_pub = rospy.Publisher("~terrain_markers", MarkerArray, queue_size=1, latch=True)
 
         pose_topic = p("~pose_topic", "/robot_pose_ekf/odom_combined")
         if p("~pose_type", "pose_cov") == "odometry":
@@ -135,6 +186,10 @@ class QuantumNavNode(object):
         rospy.Subscriber(p("~goal_topic", "/move_base_simple/goal"), PoseStamped, self._on_goal, queue_size=1)
         rospy.Subscriber(p("~route_topic", "~route"), Path, self._on_route, queue_size=1)
         rospy.Subscriber(p("~cancel_topic", "~cancel"), Empty, self._on_cancel, queue_size=1)
+        if self.use_craters and self.terrain_topic:
+            rospy.Subscriber(self.terrain_topic, String, self._on_terrain, queue_size=2)
+        if self.use_craters and self.crater_topic:
+            rospy.Subscriber(self.crater_topic, PoseArray, self._on_craters, queue_size=1)
 
         if rospy.has_param("~goal_x") and rospy.has_param("~goal_y"):
             goal = (float(p("~goal_x")), float(p("~goal_y")))
@@ -147,6 +202,11 @@ class QuantumNavNode(object):
             else:
                 self.goal = goal
             self.new_goal = True
+            why = self._reject_reason([self.goal] + self.legs)
+            if why:
+                rospy.logerr("Launch goal rejected: %s", why)
+                self.goal, self.legs, self.new_goal = None, [], False
+                self.last_outcome = "goal rejected: " + why
 
         rospy.on_shutdown(self._stop_hard)
         rospy.loginfo("quantum_nav ready: algorithm=%s max_linear=%.2f m/s. "
@@ -159,6 +219,13 @@ class QuantumNavNode(object):
             self.pose = (pose.position.x, pose.position.y,
                          nav_core.yaw_from_quaternion(q.x, q.y, q.z, q.w))
             self.pose_stamp = time.time()
+            self.pose_history.append((self.pose_stamp, self.pose))
+
+    def _pose_at(self, t):
+        """The pose closest in time to `t` (lock held by the caller)."""
+        if not self.pose_history:
+            return self.pose
+        return min(self.pose_history, key=lambda tp: abs(tp[0] - t))[1]
 
     def _on_pose_cov(self, msg):
         self._set_pose(msg.pose.pose)
@@ -179,12 +246,71 @@ class QuantumNavNode(object):
         roll, pitch = nav_core.roll_pitch_from_quaternion(q.x, q.y, q.z, q.w)
         with self.lock:
             self.roll, self.pitch = roll, self.pitch_sign * pitch
+            driving = self.last_cmd[0] > 0.02 and self.backing is None and                 self.follower is not None and not self.follower.done
+            if driving:
+                ev = self.bumps.update(time.time(), self.pitch, roll, True)
+                if ev is not None:
+                    self.bump_event = ev
+            else:
+                self.bumps.update(time.time(), self.pitch, roll, False)
 
     def _on_sonar(self, msg):
         with self.lock:
             self.sonar_cm = msg.data
 
+    def _on_terrain(self, msg):
+        """Detections from crater_detector_node.py (JSON, robot frame) -> world frame."""
+        try:
+            dets = json.loads(msg.data).get("detections", [])
+        except (ValueError, AttributeError):
+            rospy.logwarn_throttle(5.0, "Bad /terrain/detections message")
+            return
+        with self.lock:
+            pose = self._pose_at(time.time() - self.detection_delay)
+            if pose is None or not dets:
+                return
+            changes = self.terrain.add(pose, dets)
+            self.pending_changes.extend(changes)
+        for c in changes:
+            if c[0] == "crater":
+                rospy.loginfo("Crater at (%.2f, %.2f), radius %.2f m", c[1], c[2], c[3])
+            else:
+                rospy.loginfo("%s: %d new cell(s) confirmed", c[1], len(c[2]))
+
+    def _on_craters(self, msg):
+        """Legacy: crater cells (PoseArray, robot frame) -> world, de-duplicated."""
+        with self.lock:
+            pose = self._pose_at(time.time() - self.detection_delay)
+            if pose is None or not msg.poses:
+                return
+            world = nav_core.robot_to_world(pose, [(q.position.x, q.position.y) for q in msg.poses])
+            new = self.legacy_craters.add(world)
+            if new:
+                self.pending_changes.append(("cells", "rim", new))
+
+    def _reject_reason(self, points):
+        """Why these goal/route points cannot be driven to, or None. A point on a detected
+        crater / rock / the border / the table edge, or outside the arena, is refused."""
+        for i, (x, y) in enumerate(points):
+            label = "(%.2f, %.2f)" % (x, y) if len(points) == 1 else                 "point %d (%.2f, %.2f)" % (i + 1, x, y)
+            if self.arena is not None:
+                x0, y0, w, h = self.arena
+                m = self.wall_margin
+                if not (x0 + m <= x <= x0 + w - m and y0 + m <= y <= y0 + h - m):
+                    return "%s is outside the arena" % label
+            with self.lock:
+                what = self.terrain.blocking(x, y)
+            if what:
+                return "%s is on a detected %s" % (label, what)
+        return None
+
     def _on_goal(self, msg):
+        why = self._reject_reason([(msg.pose.position.x, msg.pose.position.y)])
+        if why:
+            rospy.logwarn("Goal rejected: %s", why)
+            with self.lock:
+                self.last_outcome = "goal rejected: " + why
+            return
         with self.lock:
             self.goal = (msg.pose.position.x, msg.pose.position.y)
             self.legs = []  # an RViz goal replaces any start->goal mission
@@ -197,6 +323,12 @@ class QuantumNavNode(object):
         points = [(ps.pose.position.x, ps.pose.position.y) for ps in msg.poses]
         if not points:
             rospy.logwarn("Ignoring an empty route")
+            return
+        why = self._reject_reason(points)
+        if why:
+            rospy.logwarn("Route rejected: %s", why)
+            with self.lock:
+                self.last_outcome = "route rejected: " + why
             return
         with self.lock:
             self.goal, self.legs = points[0], points[1:]
@@ -247,7 +379,10 @@ class QuantumNavNode(object):
             a += scan.angle_increment
         return best
 
-    def _build_grid(self, pose):
+    def _build_grid(self, pose, scale=1.0):
+        """Planning grid: map or arena + LiDAR + camera terrain. scale < 1 shrinks the
+        clearance round everything (the retry when no path fits at full clearance)."""
+        radius = self.robot_radius * scale
         with self.lock:
             m = self.map_msg
             scan = self.scan
@@ -256,19 +391,40 @@ class QuantumNavNode(object):
             grid = nav_core.PlanningGrid.from_occupancy(
                 info.width, info.height, info.resolution,
                 info.origin.position.x, info.origin.position.y, m.data,
-                plan_resolution=self.plan_resolution, robot_radius=self.robot_radius,
+                plan_resolution=self.plan_resolution, robot_radius=radius,
                 unknown_is_blocked=self.unknown_is_blocked, elevation=self.elevation,
                 max_slope_deg=self.max_slope_deg)
+        elif self.arena is not None:
+            x0, y0, w, h = self.arena
+            grid = nav_core.PlanningGrid.arena(
+                x0, y0, w, h, resolution=self.plan_resolution, wall_margin=self.wall_margin,
+                robot_radius=radius, elevation=self.elevation,
+                max_slope_deg=self.max_slope_deg)
         else:
-            rospy.logwarn("No /map received — planning on open ground + live LiDAR obstacles.")
-            grid = nav_core.PlanningGrid.empty(pose[0], pose[1], size=20.0,
+            rospy.logwarn_throttle(10.0, "No /map received: planning on open ground + live "
+                                   "LiDAR obstacles.")
+            grid = nav_core.PlanningGrid.empty(pose[0], pose[1], size=self.grid_size,
                                                resolution=self.plan_resolution,
                                                elevation=self.elevation,
                                                max_slope_deg=self.max_slope_deg)
         if scan is not None:
             grid.add_obstacle_points(self._scan_points(pose, scan, self.lidar_obstacle_range),
-                                     self.robot_radius)
+                                     radius)
+        self._add_terrain(grid, scale)
+        if self.soft_margin > 0:
+            grid.add_soft_margin(self.soft_margin, self.soft_weight)
         return grid
+
+    def _add_terrain(self, grid, scale=1.0):
+        """Camera terrain (crater discs, rock / border / no-floor cells), world frame."""
+        clearance = (self.robot_radius + self.crater_margin) * scale
+        with self.lock:
+            discs = self.terrain.discs()
+            cells = self.terrain.points() + list(self.legacy_craters.points)
+        for x, y, r in discs:
+            grid.add_disc(x, y, r + clearance)
+        if cells:
+            grid.add_obstacle_points(cells, clearance)
 
     def _to_path_msg(self, points):
         path = Path()
@@ -286,19 +442,31 @@ class QuantumNavNode(object):
     # ── planning ──────────────────────────────────────────────────────────────
     def _plan(self, pose, goal):
         self._publish_cmd(0.0, 0.0)
-        grid = self._build_grid(pose)
+        with self.lock:
+            self.pending_changes = []  # everything known goes into this plan's grid
         algos = nav_core.ALGORITHMS if self.algorithm == "auto" else (self.algorithm,)
-        results = dict((a, nav_core.plan(grid, a, pose[:2], goal)) for a in algos)
+        scales = [1.0]
+        if self.min_clearance_scale < 1.0:
+            scales += [1.0 - (1.0 - self.min_clearance_scale) * f for f in (0.5, 1.0)]
+        for scale in scales:
+            grid = self._build_grid(pose, scale)
+            results = dict((a, nav_core.plan(grid, a, pose[:2], goal)) for a in algos)
+            ranked = nav_core.rank(results.values())
+            if ranked:
+                if scale < 1.0:
+                    rospy.logwarn("No path at full clearance; planned with %.0f%% of it "
+                                  "(%.2f m round obstacles)", 100 * scale,
+                                  (self.robot_radius + self.crater_margin) * scale)
+                break
         for a, r in results.items():
             if r is not None:
                 self.algo_path_pubs[a].publish(self._to_path_msg(r.points))
-        ranked = nav_core.rank(results.values())
         if not ranked:
             rospy.logerr("No path found to (%.2f, %.2f) by %s", goal[0], goal[1], ", ".join(algos))
             return False
         best = ranked[0]
         self.active, self.all_results = best, results
-        waypoints = nav_core.thin_path(best.points)
+        waypoints = nav_core.thin_path(best.points, spacing=self.path_spacing)
         self.follower = nav_core.WaypointFollower(
             waypoints, self.goal_tolerance, self.waypoint_tolerance,
             self.max_linear, self.max_angular)
@@ -349,46 +517,56 @@ class QuantumNavNode(object):
         rate = rospy.Rate(self.rate_hz)
         dt = 1.0 / self.rate_hz
         start = time.time()
+        self._publish_terrain(force=True)
         while not rospy.is_shutdown():
-            with self.lock:
-                pose = self.pose
-                pose_age = time.time() - self.pose_stamp
-                goal, new_goal = self.goal, self.new_goal
-                self.new_goal = False
-                scan, sonar = self.scan, self.sonar_cm
-                roll, pitch = self.roll, self.pitch
-                cancel, self.cancel = self.cancel, False
-                if cancel:
-                    self.goal, self.legs = None, []
-
-            if cancel:
-                self._publish_cmd(0.0, 0.0)
-                if self.follower is not None and not self.follower.done:
-                    self._log_run("cancelled")
-                self.follower = None
-                self.path_pub.publish(self._to_path_msg([]))
-                self.last_outcome = "stopped by user"
-
-            if new_goal and goal is not None:
-                self.last_outcome = None
-            status = self._tick(pose, pose_age, goal, new_goal, scan, sonar, roll, pitch, dt, start)
-            # One-tick outcomes ("goal reached", "ABORTED: ...", "no path") would vanish on the
-            # next tick; keep the latest in the idle status so slow subscribers still see it.
-            if status == "idle":
-                if self.last_outcome:
-                    status = "idle (last: %s)" % self.last_outcome
-            elif self.follower is None or self.follower.done:
-                if not status.startswith("waiting"):
-                    self.last_outcome = status
-            if status != self.status:
-                rospy.loginfo("status: %s", status)
-                self.status = status
-            self.status_pub.publish(String(data=status))
+            self.step(dt, start)
             rate.sleep()
+
+    def step(self, dt, start):
+        """One control cycle (the body of spin; the simulator calls it directly)."""
+        with self.lock:
+            pose = self.pose
+            pose_age = time.time() - self.pose_stamp
+            goal, new_goal = self.goal, self.new_goal
+            self.new_goal = False
+            scan, sonar = self.scan, self.sonar_cm
+            roll, pitch = self.roll, self.pitch
+            cancel, self.cancel = self.cancel, False
+            if cancel:
+                self.goal, self.legs = None, []
+
+        if cancel:
+            self._publish_cmd(0.0, 0.0)
+            if self.follower is not None and not self.follower.done:
+                self._log_run("cancelled")
+            self.follower = None
+            self.backing = None  # also stop reversing out of a crater
+            self.path_pub.publish(self._to_path_msg([]))
+            self.last_outcome = "stopped by user"
+
+        if new_goal and goal is not None:
+            self.last_outcome = None
+        status = self._tick(pose, pose_age, goal, new_goal, scan, sonar, roll, pitch, dt, start)
+        # One-tick outcomes ("goal reached", "ABORTED: ...", "no path") would vanish on the
+        # next tick; keep the latest in the idle status so slow subscribers still see it.
+        if status == "idle":
+            if self.last_outcome:
+                status = "idle (last: %s)" % self.last_outcome
+        elif self.follower is None or self.follower.done:
+            if not status.startswith("waiting"):
+                self.last_outcome = status
+        if status != self.status:
+            rospy.loginfo("status: %s", status)
+            self.status = status
+        self.status_pub.publish(String(data=status))
+        self._publish_terrain()
 
     def _tick(self, pose, pose_age, goal, new_goal, scan, sonar, roll, pitch, dt, start):
         if pose is None or pose_age > self.pose_timeout:
             self._publish_cmd(0.0, 0.0)
+            if new_goal:
+                with self.lock:
+                    self.new_goal = True  # keep the goal until the pose arrives
             return "waiting for pose (%s)" % ("none yet" if pose is None else "stale %.1fs" % pose_age)
 
         if new_goal and goal is not None:
@@ -399,6 +577,7 @@ class QuantumNavNode(object):
             if self.follower is not None and not self.follower.done:
                 self._log_run("preempted")
             self.stuck_replans = 0
+            self.bump_count = 0
             if not self._plan(pose, goal):
                 self.follower = None
                 return "no path"
@@ -413,6 +592,22 @@ class QuantumNavNode(object):
             self._log_run("aborted_tilt")
             self.follower = None
             return "ABORTED: tilt %.0f deg exceeds limit" % math.degrees(max(abs(roll), abs(pitch)))
+
+        # the table edge: never roll off the arena
+        if self.arena is not None:
+            x0, y0, w, h = self.arena
+            m = self.edge_stop
+            if not (x0 + m <= pose[0] <= x0 + w - m and y0 + m <= pose[1] <= y0 + h - m):
+                self._publish_cmd(0.0, 0.0)
+                self._log_run("aborted_edge")
+                self.follower = None
+                rospy.logerr("At the table edge (%.2f, %.2f); stopping", pose[0], pose[1])
+                return "ABORTED: at the table edge"
+
+        # terrain (camera detections, IMU bump)
+        status = self._craters_tick(pose, goal, scan, pitch)
+        if status is not None:
+            return status
 
         # obstacle ahead (LiDAR front sector, sonar)
         sonar_m = sonar / 100.0 if sonar is not None and sonar > 0 else float("inf")
@@ -463,6 +658,137 @@ class QuantumNavNode(object):
         return "driving %s (waypoint %d/%d)" % (self.active.algorithm, self.follower.index + 1,
                                                 len(self.follower.waypoints))
 
+
+    # ── terrain (craters, rocks, border) ──────────────────────────────────────
+    def _replan_for_crater(self, pose, goal, why="terrain"):
+        if not self._plan(pose, goal):
+            self.follower = None
+            return "no path around %s" % why
+        return "replanned: %s" % why
+
+    def _changes_hit_path(self, changes, pose):
+        clearance = self.robot_radius + self.crater_margin
+        discs, pts = [], []
+        for c in changes:
+            if c[0] == "crater":
+                discs.append((c[1], c[2], c[3]))
+            else:
+                pts.extend(c[2])
+        wps, idx = self.follower.waypoints, self.follower.index
+        return (bool(discs) and nav_core.discs_near_path(discs, pose[:2], wps, idx, clearance)) or \
+            (bool(pts) and nav_core.points_near_path(pts, pose[:2], wps, idx, clearance))
+
+    def _craters_tick(self, pose, goal, scan, pitch):
+        """Returns a status while handling terrain, None to carry on driving."""
+        if self.backing is not None:
+            # reversing out of a crater rim the IMU felt, then replan with it marked
+            bx, by, t0 = self.backing
+            rear = float("inf")
+            if scan is not None:
+                rear = nav_core.scan_sectors(scan.ranges, scan.angle_min, scan.angle_increment,
+                                             scan.range_max, scan.range_min,
+                                             self.laser_yaw_offset).rear
+            moved = math.hypot(pose[0] - bx, pose[1] - by)
+            if (moved < self.crater_backup and time.time() - t0 < 4.0 and
+                    rear > self.avoid_params["rear_clearance"]):
+                self._publish_cmd(-0.06, 0.0)
+                return "crater: backing out"
+            self._publish_cmd(0.0, 0.0)
+            self.backing = None
+            rospy.loginfo("Backed out of the crater edge; replanning round it")
+            return self._replan_for_crater(pose, goal, "crater edge")
+
+        if not self.use_craters:
+            return None
+
+        # IMU: a wheel climbed a crater rim (short pitch / roll bump)
+        with self.lock:
+            ev, self.bump_event = self.bump_event, None
+        if ev is not None:
+            return self._on_bump(pose, goal, ev)
+
+        # camera: new terrain on the path still to drive -> replan
+        with self.lock:
+            pending, self.pending_changes = self.pending_changes, []
+        if pending and self._changes_hit_path(pending, pose):
+            rospy.logwarn("New terrain on the path ahead; replanning round it")
+            return self._replan_for_crater(pose, goal)
+        return None
+
+    def _on_bump(self, pose, goal, ev):
+        self._publish_cmd(0.0, 0.0)
+        self.bump_count += 1
+        if self.bump_count > self.max_bumps:
+            self._log_run("aborted_bumps")
+            self.follower = None
+            rospy.logerr("%d bumps on the way to this goal; stopping", self.bump_count - 1)
+            return "ABORTED: kept hitting crater rims"
+        # nose up / roll: a front wheel is on the rim, just ahead of us. Nose down: the rear
+        # wheels are. Either way the crater lies on ahead of that rim point, so mark a
+        # crater-sized disc starting there.
+        contact = -self.bump_contact_ahead if ev["kind"] == "nose_down" else self.bump_contact_ahead
+        r = self.bump_crater_radius
+        (mx, my), = nav_core.robot_to_world(pose, [(contact + r - 0.02, 0.0)])
+        with self.lock:
+            self.terrain.add_mark(mx, my, r)
+        rospy.logwarn("Bump (%s %.1f deg) at (%.2f, %.2f): crater edge, marking a %.0f cm crater "
+                      "at (%.2f, %.2f)", ev["kind"], ev["deg"], pose[0], pose[1], 200 * r, mx, my)
+        self._publish_terrain(force=True)
+        if ev["kind"] == "nose_down":
+            return self._replan_for_crater(pose, goal, "crater edge")
+        self.backing = (pose[0], pose[1], time.time())
+        return "crater: bump, backing out"
+
+    def _publish_terrain(self, force=False):
+        now = time.time()
+        if not force and (self.terrain.version == self.terrain_published or
+                          now - getattr(self, "_terrain_pub_t", 0.0) < 0.5):
+            return
+        self._terrain_pub_t = now
+        clearance = self.robot_radius + self.crater_margin
+        with self.lock:
+            snap = self.terrain.snapshot(clearance)
+            legacy = [[round(x, 3), round(y, 3)] for x, y in self.legacy_craters.points]
+            self.terrain_published = self.terrain.version
+        snap["rim"] = snap["rim"] + legacy
+        self.terrain_pub.publish(String(data=json.dumps(snap)))
+        self.marker_pub.publish(self._markers(snap))
+
+    def _markers(self, snap):
+        """RViz view of the terrain map: orange discs = craters, red = rocks, purple = border,
+        black = no floor (table edge). Fixed frame: map."""
+        arr = MarkerArray()
+        wipe = Marker()
+        wipe.action = Marker.DELETEALL
+        arr.markers.append(wipe)
+        stamp = rospy.Time.now()
+        for i, c in enumerate(snap["craters"]):
+            m = Marker()
+            m.header.frame_id, m.header.stamp = self.frame_id, stamp
+            m.ns, m.id, m.type, m.action = "craters", i, Marker.CYLINDER, Marker.ADD
+            m.pose.position.x, m.pose.position.y, m.pose.position.z = c["x"], c["y"], 0.01
+            m.pose.orientation.w = 1.0
+            m.scale.x = m.scale.y = 2.0 * c["r"]
+            m.scale.z = 0.02
+            m.color.r, m.color.g, m.color.b, m.color.a = 1.0, 0.55, 0.0, 0.6
+            arr.markers.append(m)
+        styles = (("rock", (0.9, 0.1, 0.1), 0.25), ("border", (0.6, 0.2, 0.9), 0.06),
+                  ("nofloor", (0.05, 0.05, 0.05), 0.02), ("rim", (1.0, 0.55, 0.0), 0.03))
+        for j, (kind, (r, g, b), height) in enumerate(styles):
+            pts = snap.get(kind) or []
+            if not pts:
+                continue
+            m = Marker()
+            m.header.frame_id, m.header.stamp = self.frame_id, stamp
+            m.ns, m.id, m.type, m.action = kind, 100 + j, Marker.CUBE_LIST, Marker.ADD
+            m.pose.orientation.w = 1.0
+            m.scale.x = m.scale.y = self.terrain.cell
+            m.scale.z = height
+            m.color.r, m.color.g, m.color.b, m.color.a = r, g, b, 0.85
+            for x, y in pts:
+                m.points.append(Point(x=x, y=y, z=height / 2.0))
+            arr.markers.append(m)
+        return arr
 
     # ── obstacles ─────────────────────────────────────────────────────────────
     def _avoid(self, pose, goal, scan, sonar_m, pitch, dt):
