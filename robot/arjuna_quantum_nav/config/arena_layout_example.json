@@ -1,0 +1,19 @@
+{
+  // Example layout for the 87 x 87 in lunar arena. Replace the numbers with what you measured.
+  // x, y = centre of the object, measured in inches from the arena's origin corner along its
+  // two edges. diameter / width / depth = size across the widest point.
+  "units": "in",
+  "size": 87,
+  "border_width": 1.2,
+  "craters": [
+    {"x": 23, "y": 27, "diameter": 11},
+    {"x": 65, "y": 40, "diameter": 10},
+    {"x": 40, "y": 66, "diameter": 12, "rotation_deg": 22}
+  ],
+  "rocks": [
+    {"x": 49, "y": 51, "width": 12, "depth": 12},
+    {"x": 14, "y": 45, "width": 12, "depth": 12, "rotation_deg": 15},
+    {"x": 68, "y": 62, "width": 13, "depth": 11, "rotation_deg": 20},
+    {"x": 51, "y": 12, "width": 12, "depth": 12, "rotation_deg": 45}
+  ]
+}

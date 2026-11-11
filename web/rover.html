@@ -52,6 +52,13 @@
     #status { padding: 8px 10px; border-radius: 8px; background: var(--surface-hi); border: 1px solid var(--border); min-height: 34px; word-break: break-word; }
     #status.warn { border-color: var(--danger); color: var(--danger); }
     #points { list-style: none; max-height: 140px; overflow-y: auto; }
+    .msg { margin-top: 6px; padding: 6px 8px; border-radius: 8px; border: 1px solid var(--danger); color: var(--danger); font-size: 12px; }
+    .legend { line-height: 1.9; }
+    .sw { display: inline-block; width: 12px; height: 12px; margin: 0 4px 0 8px; vertical-align: -2px; }
+    .sw.crater { border: 2px dashed #fb923c; border-radius: 50%; background: rgba(251, 146, 60, 0.25); }
+    .sw.rock { background: #ef4444; border-radius: 2px; }
+    .sw.border { background: #a855f7; }
+    .sw.edge { background: #0b0b10; border: 1px solid #6b7280; }
     #points li { display: flex; justify-content: space-between; padding: 2px 0; }
     table { width: 100%; border-collapse: collapse; }
     td, th { text-align: left; padding: 3px 4px; font-size: 12px; }
@@ -109,11 +116,23 @@
     <section>
       <h2 id="points-title">Goal</h2>
       <ul id="points" class="mono"></ul>
+      <p id="point-msg" class="msg" hidden></p>
       <div class="row" style="margin-top:8px">
         <button id="undo">Undo</button>
         <button id="clear">Clear</button>
         <button id="send" class="primary">Send</button>
       </div>
+    </section>
+
+    <section id="terrain-box">
+      <h2>Detected terrain</h2>
+      <p class="mono" id="terrain-summary">waiting for /quantum_nav/terrain …</p>
+      <p class="legend muted">
+        <span class="sw crater"></span> crater (rim + inside)
+        <span class="sw rock"></span> rock
+        <span class="sw border"></span> border wall
+        <span class="sw edge"></span> table edge / no floor
+      </p>
     </section>
 
     <section id="report-box" hidden>
@@ -132,7 +151,7 @@
           </select>
         </label>
         <label>Scan topic<input id="t-scan" class="mono" value="/scan" /></label>
-        <label>Laser yaw offset (deg)<input id="t-yaw" class="mono" type="number" value="0" step="180" /></label>
+        <label>Laser yaw offset (deg) <span class="muted">(180: this rover's RPLidar is mounted backwards)</span><input id="t-yaw" class="mono" type="number" value="180" step="180" /></label>
         <label>Map topic<input id="t-map" class="mono" value="/map" /></label>
         <label>Goal topic<input id="t-goal" class="mono" value="/move_base_simple/goal" /></label>
         <label>Node namespace<input id="t-ns" class="mono" value="/quantum_nav" /></label>

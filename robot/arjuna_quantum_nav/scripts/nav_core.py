@@ -62,6 +62,7 @@ class PlanningGrid(object):
         self.blocked = list(blocked)
         self.elevation = elevation
         self.max_grade = math.tan(math.radians(max_slope_deg))
+        self.soft = None    # optional extra search cost near obstacles, see add_soft_margin()
 
     # -- construction --------------------------------------------------------
     @classmethod
@@ -92,10 +93,97 @@ class PlanningGrid(object):
         return cls(n, n, resolution, center_x - size / 2.0, center_y - size / 2.0,
                    [False] * (n * n), elevation=elevation, max_slope_deg=max_slope_deg)
 
+    @classmethod
+    def arena(cls, x0, y0, width, height, resolution=0.05, pad=0.3, wall_margin=0.0,
+              robot_radius=0.0, elevation=None, max_slope_deg=15.0):
+        """Grid for a walled arena [x0, x0+width] x [y0, y0+height]: everything outside it
+        (and a `wall_margin` strip just inside, the border wall) is blocked, then grown by
+        robot_radius. Driving off the table edge is therefore never planned."""
+        nx = int(math.ceil((width + 2 * pad) / resolution))
+        ny = int(math.ceil((height + 2 * pad) / resolution))
+        ox, oy = x0 - pad, y0 - pad
+        blocked = [False] * (nx * ny)
+        lo_x, hi_x = x0 + wall_margin, x0 + width - wall_margin
+        lo_y, hi_y = y0 + wall_margin, y0 + height - wall_margin
+        for iy in range(ny):
+            cy = oy + (iy + 0.5) * resolution
+            for ix in range(nx):
+                cx = ox + (ix + 0.5) * resolution
+                if not (lo_x <= cx <= hi_x and lo_y <= cy <= hi_y):
+                    blocked[iy * nx + ix] = True
+        grid = cls(nx, ny, resolution, ox, oy, blocked, elevation=elevation,
+                   max_slope_deg=max_slope_deg)
+        grid.inflate_edges(robot_radius)
+        return grid
+
+    def inflate_edges(self, radius):
+        """Like inflate(), but only grows blocked cells that touch a free one (fast for a
+        big blocked surround)."""
+        if radius <= 0:
+            return
+        edge = []
+        for i, b in enumerate(self.blocked):
+            if not b:
+                continue
+            ix, iy = i % self.width, i // self.width
+            for dx, dy in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+                nx, ny = ix + dx, iy + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height and \
+                        not self.blocked[ny * self.width + nx]:
+                    edge.append(i)
+                    break
+        disk = self._disk(radius)
+        for i in edge:
+            ix, iy = i % self.width, i // self.width
+            for dx, dy in disk:
+                nx, ny = ix + dx, iy + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height:
+                    self.blocked[ny * self.width + nx] = True
+
+    def add_soft_margin(self, radius, weight=1.5):
+        """Make cells within `radius` metres of a blocked cell more expensive to search through
+        (extra cost up to `weight` x the move cost, fading to 0 at `radius`). Paths then keep
+        some distance from obstacles where there is room, but can still squeeze through gaps.
+        Only the search is affected; the reported energy / distance stay the real ones."""
+        if radius <= 0 or weight <= 0:
+            self.soft = None
+            return
+        soft = [0.0] * len(self.blocked)
+        disk = [(dx, dy, math.hypot(dx, dy) * self.resolution) for dx, dy in self._disk(radius)]
+        for i, b in enumerate(self.blocked):
+            if not b:
+                continue
+            ix, iy = i % self.width, i // self.width
+            for dx, dy, d in disk:
+                nx, ny = ix + dx, iy + dy
+                if 0 <= nx < self.width and 0 <= ny < self.height:
+                    j = ny * self.width + nx
+                    if not self.blocked[j]:
+                        v = weight * (1.0 - d / radius)
+                        if v > soft[j]:
+                            soft[j] = v
+        self.soft = soft
+
+    def penalty(self, cell):
+        return self.soft[cell[1] * self.width + cell[0]] if self.soft else 0.0
+
+    def add_disc(self, x, y, radius):
+        """Block every cell whose centre is within `radius` metres of the world point."""
+        r_cells = int(math.ceil(radius / self.resolution)) + 1
+        ix, iy = self.world_to_cell(x, y)
+        r2 = radius * radius
+        for cy in range(max(0, iy - r_cells), min(self.height, iy + r_cells + 1)):
+            for cx in range(max(0, ix - r_cells), min(self.width, ix + r_cells + 1)):
+                wx, wy = self.cell_to_world(cx, cy)
+                if (wx - x) ** 2 + (wy - y) ** 2 <= r2:
+                    self.blocked[cy * self.width + cx] = True
+
     def copy(self):
-        return PlanningGrid(self.width, self.height, self.resolution, self.origin_x,
-                            self.origin_y, self.blocked, self.elevation,
-                            math.degrees(math.atan(self.max_grade)))
+        g = PlanningGrid(self.width, self.height, self.resolution, self.origin_x,
+                         self.origin_y, self.blocked, self.elevation,
+                         math.degrees(math.atan(self.max_grade)))
+        g.soft = list(self.soft) if self.soft else None
+        return g
 
     def _disk(self, radius):
         r = int(math.ceil(radius / self.resolution))
@@ -248,7 +336,8 @@ def _search(grid, start, goal, edge_cost, heuristic, max_expansions=400000):
 
 def _energy_cost(grid):
     def cost(a, b):
-        return grid.step(a, b)[2]
+        e = grid.step(a, b)[2]
+        return e if e is None or grid.soft is None else e * (1.0 + grid.penalty(b))
     return cost
 
 
@@ -256,7 +345,7 @@ def _distance_cost(grid):
     # slope-blind: only refuses impassable slopes
     def cost(a, b):
         d, _, e = grid.step(a, b)
-        return None if e is None else d
+        return None if e is None else d * (1.0 + grid.penalty(b))
     return cost
 
 
@@ -707,6 +796,288 @@ class ProgressWatchdog(object):
         elif d < self.best - self.step:
             self.best, self.travel = d, 0.0
         return self.travel > self.travel_limit
+
+
+# ── craters (ground dips) ─────────────────────────────────────────────────────
+def robot_to_world(pose, points):
+    """Robot-frame (forward, left) points -> world (x, y), given pose (x, y, yaw)."""
+    x, y, yaw = pose
+    c, s = math.cos(yaw), math.sin(yaw)
+    return [(x + fx * c - ly * s, y + fx * s + ly * c) for fx, ly in points]
+
+
+def point_segment_distance(p, a, b):
+    ax, ay = a
+    dx, dy = b[0] - ax, b[1] - ay
+    seg2 = dx * dx + dy * dy
+    t = 0.0 if seg2 == 0 else max(0.0, min(1.0, ((p[0] - ax) * dx + (p[1] - ay) * dy) / seg2))
+    return math.hypot(p[0] - (ax + t * dx), p[1] - (ay + t * dy))
+
+
+def points_near_path(points, current_xy, waypoints, start_index, clearance):
+    """True if any point lies within `clearance` of the path still to drive:
+    the robot's position, then waypoints[start_index:]."""
+    route = [tuple(current_xy)] + [tuple(w) for w in waypoints[start_index:]]
+    if len(route) == 1:
+        route.append(route[0])
+    for p in points:
+        for a, b in zip(route[:-1], route[1:]):
+            if point_segment_distance(p, a, b) <= clearance:
+                return True
+    return False
+
+
+def discs_near_path(discs, current_xy, waypoints, start_index, clearance):
+    """True if any disc (x, y, r) touches the path still to drive, with `clearance` to spare."""
+    route = [tuple(current_xy)] + [tuple(w) for w in waypoints[start_index:]]
+    if len(route) == 1:
+        route.append(route[0])
+    for x, y, r in discs:
+        for a, b in zip(route[:-1], route[1:]):
+            if point_segment_distance((x, y), a, b) <= r + clearance:
+                return True
+    return False
+
+
+class CraterMap(object):
+    """World positions of detected craters, de-duplicated on a `cell` grid so the same
+    crater seen in many camera frames is stored once. Points persist for the session."""
+
+    def __init__(self, cell=0.05):
+        self.cell = cell
+        self._keys = set()
+        self.points = []
+
+    def add(self, points):
+        """Add world (x, y) points; returns only the ones not already known."""
+        new = []
+        for x, y in points:
+            key = (int(math.floor(x / self.cell)), int(math.floor(y / self.cell)))
+            if key not in self._keys:
+                self._keys.add(key)
+                self.points.append((x, y))
+                new.append((x, y))
+        return new
+
+    def clear(self):
+        self._keys.clear()
+        del self.points[:]
+
+
+# ── terrain seen by the depth camera, kept in the world frame ─────────────────
+class TerrainMap(object):
+    """Craters, rocks, border wall and no-floor regions in the WORLD frame, for the whole run.
+
+    Detections arrive in the robot frame (terrain_core.py). They are moved to the world frame
+    with the pose they were seen from and merged:
+      * craters are circles; the same crater seen again updates one circle (a view that shows
+        more of the rim wins), so a first glimpse of half a rim does not leave a ghost behind;
+      * rocks / border / no-floor are cells on a grid; a cell has to be seen `confirm` times.
+    Nothing is removed, because the arena does not change; clear() forgets everything.
+    """
+
+    KINDS = ("rock", "border", "nofloor", "rim")
+
+    def __init__(self, cell=0.04, confirm=None, bounds=None):
+        self.cell = cell
+        # (x0, y0, x1, y1) of the arena, if known: nothing outside the table matters, so
+        # detections there (the far side of the border wall, the void) are dropped
+        self.bounds = bounds
+        self.confirm = {"crater": 2, "rock": 2, "border": 2, "nofloor": 3, "rim": 2}
+        if confirm:
+            self.confirm.update(confirm)
+        self.craters = []                       # dicts: x, y, r, span, hits, src
+        self.cells = dict((k, {}) for k in self.KINDS)   # kind -> {key: [x, y, hits]}
+        self.version = 0                        # bumps whenever the confirmed map changes
+
+    # -- feeding -------------------------------------------------------------
+    def add(self, pose, detections):
+        """Merge robot-frame detections seen from `pose` (x, y, yaw).
+        Returns the confirmed changes: ("crater", x, y, r) and ("cells", kind, [(x, y), ...])."""
+        changes = []
+        for d in detections:
+            kind = d.get("type")
+            if kind == "crater" and not d.get("partial") and d.get("r", 0) > 0:
+                c = self._add_crater(pose, d)
+                if c:
+                    changes.append(c)
+                continue
+            if kind == "crater":
+                kind = "rim"
+            if kind not in self.cells:
+                continue
+            world = robot_to_world(pose, [(float(x), float(y)) for x, y in d.get("cells", [])])
+            if kind == "rock" and self.bounds is not None:
+                # a short piece of the border wall can look like a rock: along the edge of the
+                # table it is the wall
+                world_rock = [w for w in world if not self._on_edge(*w)]
+                world_wall = [w for w in world if self._on_edge(*w)]
+                new = self._add_cells("rock", world_rock) if world_rock else []
+                wall = self._add_cells("border", world_wall) if world_wall else []
+                if wall:
+                    changes.append(("cells", "border", wall))
+                if new:
+                    changes.append(("cells", kind, new))
+                continue
+            new = self._add_cells(kind, world)
+            if new:
+                changes.append(("cells", kind, new))
+        if changes:
+            self.version += 1
+        return changes
+
+    def _on_edge(self, x, y, band=0.08):
+        b = self.bounds
+        return min(x - b[0], b[2] - x, y - b[1], b[3] - y) < band
+
+    def _outside(self, x, y, slack=0.0):
+        b = self.bounds
+        return b is not None and not (b[0] - slack <= x <= b[2] + slack and
+                                      b[1] - slack <= y <= b[3] + slack)
+
+    def _add_crater(self, pose, d):
+        (x, y), = robot_to_world(pose, [(float(d["x"]), float(d["y"]))])
+        if self._outside(x, y, slack=0.05):
+            return None
+        r, span = float(d.get("fill_r", d["r"])), float(d.get("span", 0.0))
+        need = self.confirm["crater"]
+        for c in self.craters:
+            if c["src"] != "camera":
+                continue
+            if math.hypot(c["x"] - x, c["y"] - y) <= 0.6 * max(c["r"], r) + 0.05:
+                c["hits"] += 1
+                if span >= c["span"] + 0.5:         # a better view of the rim: take its circle
+                    c["x"], c["y"], c["r"], c["span"] = x, y, r, span
+                elif span >= c["span"] - 0.5:       # comparable view: average the two
+                    c["x"], c["y"], c["r"] = (0.5 * (c["x"] + x), 0.5 * (c["y"] + y),
+                                              0.5 * (c["r"] + r))
+                    c["span"] = max(c["span"], span)
+                if c["hits"] >= need:
+                    return ("crater", c["x"], c["y"], c["r"])
+                return None
+        self.craters.append({"x": x, "y": y, "r": r, "span": span, "hits": 1, "src": "camera"})
+        return ("crater", x, y, r) if need <= 1 else None
+
+    def _add_cells(self, kind, world):
+        store = self.cells[kind]
+        need = self.confirm[kind]
+        new = []
+        for x, y in world:
+            if self._outside(x, y):
+                continue
+            key = (int(math.floor(x / self.cell)), int(math.floor(y / self.cell)))
+            rec = store.get(key)
+            if rec is None:
+                store[key] = rec = [x, y, 0]
+            rec[2] += 1
+            if rec[2] == need:
+                new.append((rec[0], rec[1]))
+        return new
+
+    def add_mark(self, x, y, r, src="bump"):
+        """A crater edge felt by the IMU: a small blocked disc, confirmed at once."""
+        for c in self.craters:
+            if c["src"] == src and math.hypot(c["x"] - x, c["y"] - y) < r:
+                return None
+        self.craters.append({"x": x, "y": y, "r": r, "span": 0.0, "hits": 99, "src": src})
+        self.version += 1
+        return ("crater", x, y, r)
+
+    def clear(self):
+        del self.craters[:]
+        for k in self.cells:
+            self.cells[k].clear()
+        self.version += 1
+
+    # -- reading -------------------------------------------------------------
+    def discs(self):
+        """Confirmed craters as (x, y, r)."""
+        return [(c["x"], c["y"], c["r"]) for c in self.craters
+                if c["hits"] >= self.confirm["crater"]]
+
+    def points(self, kinds=None):
+        """Confirmed cell centres (x, y) of the given kinds (default: all cell kinds)."""
+        out = []
+        for k in (kinds or self.KINDS):
+            need = self.confirm[k]
+            out.extend((r[0], r[1]) for r in self.cells[k].values() if r[2] >= need)
+        return out
+
+    def blocking(self, x, y, pad=0.0):
+        """Name of the detected object that the point lies on (within `pad` of it), else None."""
+        for cx, cy, r in self.discs():
+            if math.hypot(x - cx, y - cy) <= r + pad:
+                return "crater"
+        half = self.cell * 0.75 + pad
+        names = {"rim": "crater", "nofloor": "table edge", "border": "border", "rock": "rock"}
+        for k in ("rock", "border", "nofloor", "rim"):
+            need = self.confirm[k]
+            for r in self.cells[k].values():
+                if r[2] >= need and abs(r[0] - x) <= half and abs(r[1] - y) <= half:
+                    return names[k]
+        return None
+
+    def snapshot(self, clearance=0.0, max_cells=700):
+        """JSON-able summary for the web page: circles and cell lists, in the world frame."""
+        out = {"clearance": round(clearance, 3), "version": self.version,
+               "craters": [{"x": round(c["x"], 3), "y": round(c["y"], 3), "r": round(c["r"], 3),
+                            "src": c["src"]} for c in self.craters
+                           if c["hits"] >= self.confirm["crater"]]}
+        budget = max_cells
+        for k in ("rock", "border", "nofloor", "rim"):
+            pts = [[round(x, 3), round(y, 3)] for x, y in self.points([k])]
+            out[k] = pts[:budget]
+            budget = max(0, budget - len(out[k]))
+        return out
+
+
+# ── IMU bump (a wheel climbing a 2 cm crater rim) ─────────────────────────────
+class BumpDetector(object):
+    """Spots the short pitch / roll jolt of a wheel climbing a raised crater rim.
+
+    A slow average of pitch and roll is the baseline (ramps and a tilted table follow it);
+    a deviation from it larger than the threshold, while the rover is driving, is a bump.
+    update() returns None or {"kind": "nose_up" | "nose_down" | "roll", "deg": magnitude}."""
+
+    def __init__(self, pitch_deg=2.5, roll_deg=3.0, tau=1.5, samples=2, holdoff=3.0):
+        self.pitch_thr = math.radians(pitch_deg)
+        self.roll_thr = math.radians(roll_deg)
+        self.tau, self.samples, self.holdoff = tau, samples, holdoff
+        self.enabled = pitch_deg > 0
+        self.reset()
+
+    def reset(self):
+        self.base_p = self.base_r = None
+        self.count = 0
+        self.last_t = None
+        self.quiet_until = 0.0
+
+    def update(self, t, pitch, roll, driving):
+        if not self.enabled:
+            return None
+        if self.base_p is None:
+            self.base_p, self.base_r, self.last_t = pitch, roll, t
+            return None
+        dt = max(0.0, min(t - self.last_t, 1.0))
+        self.last_t = t
+        dp, dr = pitch - self.base_p, roll - self.base_r
+        over_p, over_r = abs(dp) > self.pitch_thr, abs(dr) > self.roll_thr
+        if not (over_p or over_r):
+            alpha = 1.0 - math.exp(-dt / self.tau)
+            self.base_p += alpha * dp
+            self.base_r += alpha * dr
+            self.count = 0
+            return None
+        if not driving or t < self.quiet_until:
+            return None
+        self.count += 1
+        if self.count < self.samples:
+            return None
+        self.count = 0
+        self.quiet_until = t + self.holdoff
+        if over_p and (abs(dp) / self.pitch_thr >= abs(dr) / self.roll_thr):
+            return {"kind": "nose_up" if dp > 0 else "nose_down", "deg": math.degrees(abs(dp))}
+        return {"kind": "roll", "deg": math.degrees(abs(dr))}
 
 
 def uphill_speed_cap(max_linear, pitch_rad):

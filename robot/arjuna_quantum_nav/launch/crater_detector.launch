@@ -1,0 +1,42 @@
+<!--
+  Terrain detection with the OAK-D Lite depth camera (Arjuna kit, ROS Melodic): crater rims,
+  rocks, the border wall and the table edge. Publishes /terrain/detections for quantum_nav
+  (and /craters/points). Stop the kit's Arjuna_camera_pub.py first: only one program can open
+  the camera. Normally started for you by arena.launch; run it alone for calibration/checks:
+
+    roslaunch arjuna_quantum_nav crater_detector.launch calibrate:=true  # rover on FLAT clear floor
+    roslaunch arjuna_quantum_nav crater_detector.launch measure:=true    # noise + rim height, then exits
+    roslaunch arjuna_quantum_nav crater_detector.launch                  # watch: rostopic echo /terrain/status
+
+  Any terrain_core.TerrainParams field can also be set, e.g. rim_min:=0.012 tall_min:=0.06
+-->
+<launch>
+  <arg name="calibrate" default="false"/>       <!-- true: refit the floor (rover on flat clear ground) -->
+  <arg name="measure" default="false"/>         <!-- true: print floor noise + rim height, then exit -->
+  <arg name="camera_forward" default="0.10"/>   <!-- m: camera ahead of the rover's centre -->
+  <arg name="rim_min" default="0.010"/>         <!-- m: lowest ridge that counts as a crater rim (measure!) -->
+  <arg name="tall_min" default="0.05"/>         <!-- m: above the floor = rock / wall (measure!) -->
+  <arg name="rim_range" default="0.90"/>        <!-- m ahead: rims are only searched this far -->
+  <arg name="x_max" default="1.20"/>            <!-- m ahead: farthest floor watched -->
+  <arg name="half_width" default="0.60"/>       <!-- m either side of the centre line -->
+  <arg name="pose_topic" default="/robot_pose_ekf/odom_combined"/>  <!-- fuses frames while driving -->
+  <arg name="rate" default="8.0"/>              <!-- Hz; lower it if the Nano cannot keep up -->
+  <arg name="pixel_step" default="3"/>          <!-- sample every Nth pixel; raise to go faster -->
+  <arg name="frames" default="3"/>              <!-- frames fused (2 = faster, noisier) -->
+
+  <node pkg="arjuna_quantum_nav" type="crater_detector_node.py" name="crater_detector" output="screen">
+    <param name="calibrate" value="$(arg calibrate)"/>
+    <param name="measure" value="$(arg measure)"/>
+    <param name="camera_forward" value="$(arg camera_forward)"/>
+    <param name="rim_min" value="$(arg rim_min)"/>
+    <param name="tall_min" value="$(arg tall_min)"/>
+    <param name="rim_range" value="$(arg rim_range)"/>
+    <param name="x_max" value="$(arg x_max)"/>
+    <param name="half_width" value="$(arg half_width)"/>
+    <param name="pose_topic" value="$(arg pose_topic)"/>
+    <param name="rate" value="$(arg rate)"/>
+    <param name="pixel_step" value="$(arg pixel_step)"/>
+    <param name="frames" value="$(arg frames)"/>
+    <param name="calib_file" value="$(env HOME)/.ros/crater_camera.json"/>
+  </node>
+</launch>

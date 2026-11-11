@@ -10,6 +10,9 @@
  * Route mode: N points   -> nav_msgs/Path on /quantum_nav/route
  *             (the rover visits each point in order; each leg is planned)
  * STOP      : std_msgs/Empty on /quantum_nav/cancel, plus zero /cmd_vel
+ * Terrain   : /quantum_nav/terrain (JSON String, latched) = craters (circles) and rock /
+ *             border / no-floor cells the depth camera found, in the map frame. Drawn on the
+ *             map; a goal or route point placed on one is refused.
  */
 (function () {
   "use strict";
@@ -17,17 +20,19 @@
   // ── settings (remembered per browser) ──────────────────────────────────────
   var FIELDS = ["url", "t-pose", "t-pose-type", "t-scan", "t-yaw", "t-map", "t-goal", "t-ns", "t-frame"];
   function $(id) { return document.getElementById(id); }
+  // the laser offset got a new default (180); a "0" saved by an older page must not override it
+  function storeKey(id) { return "rover." + id + (id === "t-yaw" ? ".v2" : ""); }
   function load() {
     FIELDS.forEach(function (id) {
       try {
-        var v = localStorage.getItem("rover." + id);
+        var v = localStorage.getItem(storeKey(id));
         if (v !== null) $(id).value = v;
       } catch (e) { /* storage blocked: keep defaults */ }
     });
   }
   function save() {
     FIELDS.forEach(function (id) {
-      try { localStorage.setItem("rover." + id, $(id).value); } catch (e) { /* ignore */ }
+      try { localStorage.setItem(storeKey(id), $(id).value); } catch (e) { /* ignore */ }
     });
   }
   function cfg() {
@@ -45,6 +50,7 @@
       status: ns + "/status",
       path: ns + "/path",
       report: ns + "/report",
+      terrain: ns + "/terrain",
       frame: $("t-frame").value.trim() || "map",
     };
   }
@@ -56,6 +62,8 @@
   var mapInfo = null;      // {w, h, res, ox, oy, img}
   var pose = null;         // {x, y, yaw}
   var scan = null;
+  var terrain = null;      // {clearance, craters:[{x,y,r,src}], rock:[[x,y]], border:[], nofloor:[], rim:[]}
+  var CELL = 0.04;         // size of one terrain cell, m
   var plannedPath = [];    // [[x, y], ...] path the rover is driving
   var mode = "goal";
   var points = [];         // user's pending points [[x, y], ...]
@@ -108,6 +116,7 @@
         plannedPath = (m.poses || []).map(function (p) { return [p.pose.position.x, p.pose.position.y]; });
       });
       subscribe(C.report, "std_msgs/String", 500, onReport);
+      subscribe(C.terrain, "std_msgs/String", 300, onTerrain);
       advertise(C.goal, "geometry_msgs/PoseStamped");
       advertise(C.route, "nav_msgs/Path");
       advertise(C.cancel, "std_msgs/Empty");
@@ -173,6 +182,55 @@
     el.className = "mono" + (/ABORTED|no path|stale|waiting for pose/i.test(m.data) ? " warn" : "");
   }
 
+  function onTerrain(m) {
+    var t;
+    try { t = JSON.parse(m.data); } catch (e) { return; }
+    terrain = t;
+    var n = function (k) { return (t[k] || []).length; };
+    $("terrain-summary").textContent = (t.craters || []).length + " crater(s), " +
+      n("rock") + " rock cell(s), " + n("border") + " border cell(s), " + n("nofloor") + " edge cell(s)";
+    // a goal that was fine when placed may now sit on something the camera found
+    if (points.length && !sent) checkPoints(false);
+  }
+
+  // What is at this point? Returns "crater" / "rock" / "border wall" / "table edge" or null.
+  // Only the object itself counts; the rover's clearance around it is the planner's business.
+  function objectAt(pt) {
+    if (!terrain) return null;
+    var i, d, c, pad = 0.02;
+    for (i = 0; i < (terrain.craters || []).length; i++) {
+      c = terrain.craters[i];
+      if (Math.hypot(pt[0] - c.x, pt[1] - c.y) <= c.r + pad) return "crater";
+    }
+    var half = CELL * 0.75;
+    var kinds = [["rock", "rock"], ["border", "border wall"], ["nofloor", "table edge"], ["rim", "crater"]];
+    for (var k = 0; k < kinds.length; k++) {
+      var cells = terrain[kinds[k][0]] || [];
+      for (i = 0; i < cells.length; i++) {
+        if (Math.abs(cells[i][0] - pt[0]) <= half && Math.abs(cells[i][1] - pt[1]) <= half) return kinds[k][1];
+      }
+    }
+    return null;
+  }
+  function showMsg(text) {
+    var el = $("point-msg");
+    el.textContent = text || "";
+    el.hidden = !text;
+  }
+  // Remove or refuse points on detected objects. Returns true if all points are fine.
+  function checkPoints(refuseOnly) {
+    for (var i = 0; i < points.length; i++) {
+      var what = objectAt(points[i]);
+      if (what) {
+        showMsg("Point " + (mode === "goal" ? "" : "#" + (i + 1) + " ") + "(" + points[i][0].toFixed(2) + ", " +
+          points[i][1].toFixed(2) + ") is on a detected " + what + " — the rover cannot go there. Move it.");
+        return false;
+      }
+    }
+    showMsg("");
+    return true;
+  }
+
   function onReport(m) {
     var rep;
     try { rep = JSON.parse(m.data); } catch (e) { return; }
@@ -194,6 +252,7 @@
   }
   function sendPoints() {
     if (!connected || points.length === 0) return;
+    if (!checkPoints(true)) return;       // never send a goal or route point that is on a crater / rock
     var ok;
     if (mode === "goal") ok = publish(C.goal, poseMsg(points[0]));
     else ok = publish(C.route, { header: header(), poses: points.map(poseMsg) });
@@ -222,12 +281,20 @@
     renderPoints();
   }
   function addPoint(pt) {
+    var what = objectAt(pt);
+    if (what) {                           // refuse: do not place goal / route points on obstacles
+      showMsg("Not placed: (" + pt[0].toFixed(2) + ", " + pt[1].toFixed(2) + ") is on a detected " + what +
+        ". Pick a spot on open floor.");
+      return;
+    }
+    showMsg("");
     if (sent) { points = []; sent = false; }
     if (mode === "goal") points = [pt]; else points.push(pt);
     renderPoints();
   }
   function renderPoints() {
     var ul = $("points");
+    if (points.length === 0) showMsg("");
     ul.innerHTML = "";
     if (points.length === 0) {
       var li = document.createElement("li");
@@ -285,6 +352,36 @@
   }
 
   // ── drawing ───────────────────────────────────────────────────────────────
+  function drawCells(cells, fill) {
+    if (!cells || !cells.length) return;
+    var px = Math.max(2, CELL * view.scale);
+    ctx.fillStyle = fill;
+    for (var i = 0; i < cells.length; i++) {
+      ctx.fillRect(sx(cells[i][0]) - px / 2, sy(cells[i][1]) - px / 2, px, px);
+    }
+  }
+  function drawTerrain() {
+    if (!terrain) return;
+    // no floor (table edge) and border wall: flat dark / purple cells
+    drawCells(terrain.nofloor, "rgba(10,10,16,0.9)");
+    drawCells(terrain.border, "rgba(168,85,247,0.85)");
+    // rocks: solid red blobs (crumpled plastic)
+    drawCells(terrain.rock, "rgba(239,68,68,0.85)");
+    // craters: a dashed ring with a translucent floor, so they never look like rocks
+    (terrain.craters || []).forEach(function (c) {
+      ctx.beginPath(); ctx.arc(sx(c.x), sy(c.y), c.r * view.scale, 0, 2 * Math.PI);
+      ctx.fillStyle = "rgba(251,146,60,0.22)"; ctx.fill();
+      ctx.setLineDash([7, 5]); ctx.lineWidth = 3; ctx.strokeStyle = "#fb923c"; ctx.stroke();
+      ctx.setLineDash([]);
+      var k = Math.min(8, c.r * view.scale * 0.3);
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.moveTo(sx(c.x) - k, sy(c.y)); ctx.lineTo(sx(c.x) + k, sy(c.y));
+      ctx.moveTo(sx(c.x), sy(c.y) - k); ctx.lineTo(sx(c.x), sy(c.y) + k); ctx.stroke();
+    });
+    // rim arcs seen but not (yet) a full circle
+    drawCells(terrain.rim, "rgba(251,146,60,0.85)");
+  }
+
   function draw() {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = "#04040a";
@@ -308,6 +405,8 @@
     // origin axes
     ctx.strokeStyle = "rgba(255,255,255,0.18)";
     ctx.beginPath(); ctx.moveTo(sx(0), 0); ctx.lineTo(sx(0), H); ctx.moveTo(0, sy(0)); ctx.lineTo(W, sy(0)); ctx.stroke();
+
+    drawTerrain();
 
     // lidar hits
     if (scan && pose) {

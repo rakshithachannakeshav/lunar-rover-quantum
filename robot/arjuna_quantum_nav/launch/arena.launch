@@ -1,0 +1,85 @@
+<!--
+  Lunar arena run: ONE command starts the terrain detector (OAK-D) and the navigator, with
+  LiDAR mounted backwards (180), tight clearances for the 2.21 m table, the table edge blocked,
+  and the web page's rosbridge.
+
+    roslaunch arjuna_quantum_nav arena.launch algorithm:=astar goal_x:=1.8 goal_y:=1.8
+    roslaunch arjuna_quantum_nav arena.launch use_camera:=false      # LiDAR + IMU bump only
+    roslaunch arjuna_quantum_nav arena.launch use_craters:=false     # ignore the camera terrain + bump
+    roslaunch arjuna_quantum_nav arena.launch use_map:=true
+        (the map made by make_arena_map.py is served by the KIT launch: start it with
+         "roslaunch arjuna Arjuna.launch map_file:=$HOME/arena_map.yaml". Only one map_server may run)
+
+  Start the kit's bringup first (LiDAR, BNO055 figure-8 calibrated, wheels, robot_pose_ekf), NOT
+  its auto-nav node, and stop Arjuna_camera_pub.py (only one program can open the OAK-D).
+  Set the start pose with RViz "2D Pose Estimate" (/initialpose) before sending a goal.
+-->
+<launch>
+  <arg name="algorithm" default="auto"/>          <!-- auto | astar | dijkstra | qaoa -->
+  <arg name="use_camera" default="true"/>         <!-- false: do not start the detector at all -->
+  <arg name="use_craters" default="true"/>        <!-- false: navigator ignores camera terrain and IMU bumps -->
+  <arg name="calibrate" default="false"/>         <!-- true: refit the camera floor plane first -->
+  <arg name="use_map" default="false"/>           <!-- true: plan on the /map served by the kit launch (known layout) -->
+  <arg name="arena_size" default="2.21"/>         <!-- m, square table (87 in); ignored with use_map:=true -->
+  <arg name="arena_x0" default="0.0"/>            <!-- m: where the arena's origin corner is in the map frame -->
+  <arg name="arena_y0" default="0.0"/>
+  <arg name="robot_radius" default="0.12"/>       <!-- m: half the rover's diagonal. SMALLER = fits between obstacles -->
+  <arg name="crater_margin" default="0.02"/>      <!-- m kept clear beyond robot_radius round every object -->
+  <arg name="plan_resolution" default="0.05"/>
+  <arg name="max_linear" default="0.10"/>
+  <arg name="avoid_obstacles" default="false"/>   <!-- false: stop-and-wait. The reactive swerve has no idea where
+                                                       the table edge or a crater is and can drive off the table -->
+  <arg name="bump_pitch_deg" default="2.5"/>      <!-- IMU bump = crater rim; 0 = off -->
+  <arg name="goal_x" default=""/>
+  <arg name="goal_y" default=""/>
+  <arg name="start_x" default=""/>
+  <arg name="start_y" default=""/>
+  <arg name="web" default="true"/>
+  <arg name="camera_forward" default="0.10"/>
+  <arg name="rim_min" default="0.010"/>
+  <arg name="tall_min" default="0.05"/>
+  <arg name="rim_range" default="0.90"/>
+  <arg name="elevation_csv" default=""/>          <!-- optional hill/ramp height file -->
+  <arg name="rate" default="8.0"/>
+  <arg name="pixel_step" default="3"/>
+  <arg name="frames" default="3"/>
+
+  <include file="$(find arjuna_quantum_nav)/launch/crater_detector.launch" if="$(arg use_camera)">
+    <arg name="calibrate" value="$(arg calibrate)"/>
+    <arg name="camera_forward" value="$(arg camera_forward)"/>
+    <arg name="rim_min" value="$(arg rim_min)"/>
+    <arg name="tall_min" value="$(arg tall_min)"/>
+    <arg name="rim_range" value="$(arg rim_range)"/>
+    <arg name="rate" value="$(arg rate)"/>
+    <arg name="pixel_step" value="$(arg pixel_step)"/>
+    <arg name="frames" value="$(arg frames)"/>
+  </include>
+
+  <include file="$(find arjuna_quantum_nav)/launch/quantum_nav.launch">
+    <arg name="algorithm" value="$(arg algorithm)"/>
+    <arg name="use_craters" value="$(arg use_craters)"/>
+    <arg name="use_map" value="$(arg use_map)"/>
+    <arg name="laser_yaw_offset_deg" value="180.0"/>
+    <arg name="robot_radius" value="$(arg robot_radius)"/>
+    <arg name="crater_margin" value="$(arg crater_margin)"/>
+    <arg name="plan_resolution" value="$(arg plan_resolution)"/>
+    <arg name="path_spacing" value="0.15"/>
+    <arg name="waypoint_tolerance" value="0.08"/>
+    <arg name="goal_tolerance" value="0.10"/>
+    <arg name="max_linear" value="$(arg max_linear)"/>
+    <arg name="avoid_obstacles" value="$(arg avoid_obstacles)"/>
+    <arg name="lidar_stop_distance" value="0.18"/>
+    <arg name="soft_margin" value="0.10"/>
+    <arg name="bump_pitch_deg" value="$(arg bump_pitch_deg)"/>
+    <arg name="arena_width" value="$(arg arena_size)" unless="$(arg use_map)"/>
+    <arg name="arena_height" value="$(arg arena_size)" unless="$(arg use_map)"/>
+    <arg name="arena_x0" value="$(arg arena_x0)"/>
+    <arg name="arena_y0" value="$(arg arena_y0)"/>
+    <arg name="elevation_csv" value="$(arg elevation_csv)"/>
+    <arg name="goal_x" value="$(arg goal_x)"/>
+    <arg name="goal_y" value="$(arg goal_y)"/>
+    <arg name="start_x" value="$(arg start_x)"/>
+    <arg name="start_y" value="$(arg start_y)"/>
+    <arg name="web" value="$(arg web)"/>
+  </include>
+</launch>
