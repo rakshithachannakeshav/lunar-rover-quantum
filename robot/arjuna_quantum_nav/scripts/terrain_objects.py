@@ -83,8 +83,8 @@ def _cm(v):
 
 
 class _Track(object):
-    def __init__(self, tid, meas, stamp):
-        self.id = tid
+    def __init__(self, meas, stamp):
+        self.id = None              # given when confirmed, so noise never uses up an id
         self.cls = meas["class"]
         self.hist = []
         self.frames_seen = 0
@@ -180,8 +180,7 @@ class ObjectTracker(object):
             del t.hist[:-self.history]
         for mi, m in enumerate(world):
             if mi not in used_m:
-                self.tracks.append(_Track(self.next_id, m, stamp))
-                self.next_id += 1
+                self.tracks.append(_Track(m, stamp))
         # objects the camera looks at but did not find
         c, s = math.cos(pose[2]), math.sin(pose[2])
         keep = []
@@ -200,8 +199,13 @@ class ObjectTracker(object):
         if len(keep) > self.max_objects:      # drop the ones seen longest ago
             keep.sort(key=lambda t: t.last_t)
             keep = keep[len(keep) - self.max_objects:]
-            keep.sort(key=lambda t: t.id)
+            keep.sort(key=lambda t: (t.id is None, t.id or 0))
         self.tracks = keep
+        # ids in the order objects are confirmed: 1, 2, 3 ... with no gaps
+        for t in self.tracks:
+            if t.id is None and t.frames_seen >= self.min_frames:
+                t.id = self.next_id
+                self.next_id += 1
         return self.report(pose)
 
     # -- output --------------------------------------------------------------
@@ -252,7 +256,7 @@ class ObjectTracker(object):
         pose = tuple(pose) if pose is not None else (0.0, 0.0, 0.0)
         out = []
         for t in self.tracks:
-            if t.frames_seen < self.min_frames:
+            if t.id is None:            # not confirmed yet (seen fewer than min_frames times)
                 continue
             e = self._estimate(t)
             dx, dy = e["x"] - pose[0], e["y"] - pose[1]
