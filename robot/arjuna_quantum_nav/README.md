@@ -204,6 +204,43 @@ BNO055 /imu/data ──► bump detector (wheel on a rim) ───────�
    for no-floor) before it blocks. A new object lying on the remaining path triggers a replan.
    Craters and rocks are added to the grid together with the LiDAR obstacles at every plan.
 
+### Object sizes and ids (`terrain_objects.py`)
+Every detection is also reported to you as an **object** with its size, on `/terrain/objects`
+(JSON), as one line per object in `/terrain/status`, as RViz labels on `/terrain/object_markers`,
+and in the web page's **Objects** list:
+
+```
+rock #2: 31 x 27 cm, 24 cm tall, 0.82 m ahead
+crater #1: 34 cm across (inner 29 cm), rim 2.0 cm high, 0.55 m ahead-left
+rock #3: 28 x 6 cm (back not seen), >=16 cm tall, 0.95 m ahead
+```
+
+- **Sizes come from the 3-D points**, not the 2 cm cells. Rock or wall: the smallest rectangle
+  round the points above the floor (length = long side, width = short side), and the top of
+  the points above the local floor. Crater: rim height, and outer / inner rim diameter
+  measured round the fitted centre.
+- **What the camera cannot see is flagged, not guessed.** A camera that is lower than a rock
+  never sees the rock's back, and one whose view ends below the rock's top cannot see the top.
+  Then the line says `(back not seen)` or `>=` and the JSON has `footprint_complete: false` /
+  `height_is_min: true`. The arena's rocks are 20-30 cm tall, so expect `>=` heights for them
+  unless the camera is mounted higher than the rock. Craters and low rocks are measured fully.
+- **Ids stay the same** while the rover drives. Objects are kept in the map frame and matched
+  by class and position. Sizes are the median of recent views, preferring complete ones. An
+  object the camera is looking at but no longer finds is dropped after
+  `object_miss_frames` (6) frames. One that is out of view is kept, shown greyed out.
+- In simulation (tests/test_arjuna_terrain_objects.py) the sizes are within 3 cm (footprint)
+  and 2 cm (height) of the truth whenever the whole object was in view. Rocks 4 cm apart side
+  by side, or 8 cm one behind the other, are two objects.
+- `measure_objects:=false` switches the sizes off. `/terrain/detections`, which the navigator
+  plans with, is identical either way. On a desktop the sizes add about 5-8 ms per frame. The
+  detector logs its frame rate and time per frame every 30 s.
+- `use_preview:=true` (off by default) also publishes a 2 fps JPEG from the colour camera with
+  each object outlined and labelled on `/terrain/preview/compressed`, shown on the web page. It
+  needs `python3-opencv`. It runs in its own thread and drops frames rather than slowing the
+  detector. If the colour camera cannot be opened, the detector runs without it. The overlay
+  uses the factory calibration between the colour and depth cameras, so it can be off by a few
+  pixels.
+
 **Every command for the rover tests, in order, is in
 [`docs/ROVER_TEST_CHECKLIST.md`](../../docs/ROVER_TEST_CHECKLIST.md). The steps below explain
 what each one is for.**

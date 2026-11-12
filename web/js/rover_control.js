@@ -13,6 +13,11 @@
  * Terrain   : /quantum_nav/terrain (JSON String, latched) = craters (circles) and rock /
  *             border / no-floor cells the depth camera found, in the map frame. Drawn on the
  *             map; a goal or route point placed on one is refused.
+ * Objects   : /terrain/objects (JSON String from crater_detector_node.py) = one entry per
+ *             crater / rock / wall / table edge with its size and a stable id. Outlined and
+ *             labelled on the map, listed in the side panel; clicking a row highlights it.
+ * Preview   : /terrain/preview/compressed (sensor_msgs/CompressedImage, only when the
+ *             detector runs with use_preview:=true) is shown in the side panel.
  */
 (function () {
   "use strict";
@@ -51,6 +56,8 @@
       path: ns + "/path",
       report: ns + "/report",
       terrain: ns + "/terrain",
+      objects: "/terrain/objects",
+      preview: "/terrain/preview/compressed",
       frame: $("t-frame").value.trim() || "map",
     };
   }
@@ -64,6 +71,10 @@
   var scan = null;
   var terrain = null;      // {clearance, craters:[{x,y,r,src}], rock:[[x,y]], border:[], nofloor:[], rim:[]}
   var CELL = 0.04;         // size of one terrain cell, m
+  var objects = [];        // /terrain/objects entries, outlines in the map frame
+  var selectedId = null;   // object highlighted from the list
+  var OBJ_COLOUR = { crater: "#fb923c", rock: "#f87171", wall: "#c084fc", table_edge: "#9ca3af" };
+  var OBJ_NAME = { crater: "crater", rock: "rock", wall: "wall", table_edge: "table edge" };
   var plannedPath = [];    // [[x, y], ...] path the rover is driving
   var mode = "goal";
   var points = [];         // user's pending points [[x, y], ...]
@@ -117,6 +128,8 @@
       });
       subscribe(C.report, "std_msgs/String", 500, onReport);
       subscribe(C.terrain, "std_msgs/String", 300, onTerrain);
+      subscribe(C.objects, "std_msgs/String", 250, onObjects);
+      subscribe(C.preview, "sensor_msgs/CompressedImage", 500, onPreview);
       advertise(C.goal, "geometry_msgs/PoseStamped");
       advertise(C.route, "nav_msgs/Path");
       advertise(C.cancel, "std_msgs/Empty");
@@ -192,6 +205,129 @@
     // a goal that was fine when placed may now sit on something the camera found
     if (points.length && !sent) checkPoints(false);
   }
+
+  // ── objects with sizes (/terrain/objects) ─────────────────────────────────
+  function cm(v) { return v === null || v === undefined ? "?" : String(Math.round(v * 100)); }
+  function esc(s) {
+    return String(s).replace(/[&<>"]/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]; });
+  }
+  // "31 × 27 × 24 cm" (rock / wall), "34 cm across, inner 29 cm" (crater), "60 cm wide" (edge)
+  function objectSize(o) {
+    if (o.class === "crater") {
+      var d = o.outer_diameter_m || o.length_m;
+      var s = (o.size_is_estimate ? "~" : "") + cm(d) + " cm across";
+      if (o.inner_diameter_m && !o.size_is_estimate) s += ", inner " + cm(o.inner_diameter_m) + " cm";
+      if (o.height_m !== null && o.height_m !== undefined) s += ", rim " + (o.height_m * 100).toFixed(1) + " cm";
+      return s;
+    }
+    if (o.class === "table_edge") return cm(o.length_m) + " cm wide";
+    var t = "L " + cm(o.length_m) + " × W " + cm(o.width_m);
+    if (o.height_m !== null && o.height_m !== undefined) t += " × H " + (o.height_is_min ? "≥" : "") + cm(o.height_m);
+    t += " cm";
+    if (o.source === "no-depth") t = "~" + t + " (no depth)";
+    else if (!o.footprint_complete) t += " (back not seen)";
+    return t;
+  }
+  function objectLabel(o) {
+    var name = (OBJ_NAME[o.class] || o.class) + " #" + o.id;
+    if (o.class === "crater") return name + " " + (o.size_is_estimate ? "~" : "") + cm(o.outer_diameter_m || o.length_m) + " cm";
+    if (o.class === "table_edge") return name;
+    if (o.class === "wall") return name + " " + cm(o.length_m) + " cm";
+    var s = name + " " + cm(o.length_m) + "×" + cm(o.width_m);
+    if (o.height_m !== null && o.height_m !== undefined) s += "×" + (o.height_is_min ? "≥" : "") + cm(o.height_m);
+    return s + " cm";
+  }
+  function onObjects(m) {
+    var msg;
+    try { msg = JSON.parse(m.data); } catch (e) { return; }
+    var list = msg.objects || [];
+    // without a pose the detector reports in the robot frame: move to the map with our pose
+    if (msg.frame_id && msg.frame_id !== C.frame) {
+      if (!pose) return;
+      var c = Math.cos(pose.yaw), s = Math.sin(pose.yaw);
+      var tf = function (p) { return [pose.x + c * p[0] - s * p[1], pose.y + s * p[0] + c * p[1]]; };
+      list = list.map(function (o) {
+        var q = JSON.parse(JSON.stringify(o)), xy = tf([o.x, o.y]);
+        q.x = xy[0]; q.y = xy[1];
+        q.outline = (o.outline || []).map(tf);
+        return q;
+      });
+    }
+    objects = list;
+    if (selectedId !== null && !objects.some(function (o) { return o.id === selectedId; })) selectedId = null;
+    renderObjects();
+  }
+  function renderObjects() {
+    var ul = $("objects");
+    ul.innerHTML = "";
+    if (!objects.length) {
+      var empty = document.createElement("li");
+      empty.className = "muted";
+      empty.textContent = "no objects seen";
+      ul.appendChild(empty);
+      return;
+    }
+    objects.slice().sort(function (a, b) { return a.distance_m - b.distance_m; }).forEach(function (o) {
+      var li = document.createElement("li");
+      li.className = (o.id === selectedId ? "sel" : "") + (o.visible ? "" : " gone");
+      var sw = o.class === "table_edge" ? "edge" : o.class;
+      li.innerHTML = '<span class="name"><span class="sw ' + esc(sw) + '"></span>' + esc(OBJ_NAME[o.class] || o.class) +
+        " #" + esc(o.id) + "</span><span class=\"mono\">" + o.distance_m.toFixed(2) + " m</span>" +
+        '<span class="dims">' + esc(objectSize(o)) + (o.visible ? "" : " · not in view") +
+        " · conf " + Math.round(100 * (o.confidence || 0)) + "%</span>";
+      li.onclick = function () { selectObject(o.id); };
+      ul.appendChild(li);
+    });
+  }
+  function selectObject(id) {
+    selectedId = selectedId === id ? null : id;
+    var o = objects.filter(function (q) { return q.id === selectedId; })[0];
+    if (o) {                                  // bring it into view if it is off screen
+      var px = sx(o.x), py = sy(o.y);
+      if (px < 40 || px > W - 40 || py < 40 || py > H - 40) { setFollow(false); view.cx = o.x; view.cy = o.y; }
+    }
+    renderObjects();
+  }
+  function onPreview(m) {
+    if (!m || !m.data) return;
+    var fmt = /png/i.test(m.format || "") ? "png" : "jpeg";
+    $("preview").src = "data:image/" + fmt + ";base64," + m.data;
+    $("preview-box").hidden = false;
+  }
+  function drawObjects() {
+    objects.forEach(function (o) {
+      var pts = o.outline || [];
+      if (!pts.length) return;
+      var sel = o.id === selectedId, col = OBJ_COLOUR[o.class] || "#e5e7eb";
+      ctx.beginPath();
+      pts.forEach(function (p, k) { if (k) ctx.lineTo(sx(p[0]), sy(p[1])); else ctx.moveTo(sx(p[0]), sy(p[1])); });
+      ctx.closePath();
+      ctx.globalAlpha = o.visible ? 1 : 0.5;
+      if (sel) {
+        ctx.fillStyle = "rgba(245,158,11,0.18)"; ctx.fill();
+        ctx.lineWidth = 6; ctx.strokeStyle = "rgba(245,158,11,0.35)"; ctx.stroke();
+      }
+      ctx.lineWidth = sel ? 3 : 1.5; ctx.strokeStyle = sel ? "#f59e0b" : col; ctx.setLineDash(o.footprint_complete ? [] : [4, 3]);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      // label above the outline's top edge
+      var top = pts.reduce(function (b, p) { return sy(p[1]) < sy(b[1]) ? p : b; }, pts[0]);
+      var text = objectLabel(o);
+      ctx.font = (sel ? "bold " : "") + "11px system-ui"; ctx.textAlign = "center"; ctx.textBaseline = "bottom";
+      var w = ctx.measureText ? (ctx.measureText(text).width || 0) : 0;
+      var lx = sx(o.x), ly = sy(top[1]) - 4;
+      ctx.fillStyle = "rgba(4,4,10,0.75)"; ctx.fillRect(lx - w / 2 - 3, ly - 14, w + 6, 15);
+      ctx.fillStyle = sel ? "#f59e0b" : col; ctx.fillText(text, lx, ly);
+      ctx.globalAlpha = 1;
+    });
+  }
+  window.roverDebug = {
+    objects: function () { return objects; },
+    selected: function () { return selectedId; },
+    label: objectLabel,
+    size: objectSize,
+    draw: function () { drawObjects(); },
+  };
 
   // What is at this point? Returns "crater" / "rock" / "border wall" / "table edge" or null.
   // Only the object itself counts; the rover's clearance around it is the planner's business.
@@ -407,6 +543,7 @@
     ctx.beginPath(); ctx.moveTo(sx(0), 0); ctx.lineTo(sx(0), H); ctx.moveTo(0, sy(0)); ctx.lineTo(W, sy(0)); ctx.stroke();
 
     drawTerrain();
+    drawObjects();
 
     // lidar hits
     if (scan && pose) {

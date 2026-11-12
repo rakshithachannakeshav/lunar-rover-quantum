@@ -84,6 +84,8 @@ Use the first address, e.g. `10.26.117.143`.
    - **Route** mode: click several points in order → **Send**. It drives through each one.
    - **Undo** removes the last point, **Clear** removes all.
 6. Watch **Rover status** (e.g. `driving astar (waypoint 3/7)`, `goal reached`) and **Last plan** (energy, distance, time per algorithm).
+7. **Objects (camera)** lists every crater, rock, wall and table edge the OAK-D found, with its id, length × width × height and distance. Each one is outlined and labelled on the map, and clicking a row highlights it there. `≥` and "back not seen" mean the camera could not see all of the object yet.
+8. Optional colour view: start the navigator with `use_preview:=true` (needs `python3-opencv`). The **Camera preview** box then shows the camera image with the objects drawn on it.
 
 **STOP:** the red **STOP** button or the **Space** key.
 
