@@ -98,6 +98,36 @@ RViz: add MarkerArray `/quantum_nav/terrain_markers`.
 Web page: open `web/rover.html`, REPLACE `<jetson-ip>` in `ws://<jetson-ip>:9090`, then check **Topics and settings → Laser yaw offset = 180** (if you change it: Disconnect, Connect).
 Check: empty floor, crater, half-visible crater, rock, border wall, table edge, click a goal on a crater (should be rejected).
 
+## D1. Object sizes and ids, standing still then pushed by hand
+Same launch as D (T2). Have a tape measure, one crater, two rocks, and one low box (under the camera's height, e.g. a 10 cm box) with known sizes.
+```bash
+# T3: one line per object after the first line, e.g. "rock #2: 31 x 27 cm, 24 cm tall, 0.82 m ahead".
+rostopic echo /terrain/status
+# T4: the full JSON (sizes in metres, map frame).
+rostopic echo -n 1 /terrain/objects
+```
+Every 30 s T2 prints `terrain: N frames/s, M ms per frame (objects on)`. Note N and M.
+RViz: add MarkerArray `/terrain/object_markers` (labels + outlines) next to `/quantum_nav/terrain_markers`.
+Web page: the **Objects** list shows L × W × H and distance; click a row, its outline turns orange on the map.
+Check, one at a time, 0.4-1.0 m ahead:
+1. Low box: L and W within ~3 cm of the tape, H within ~2 cm, no "back not seen".
+2. Crater: "N cm across (inner M cm)" within ~3 cm, "rim 2.0 cm high" within ~1 cm.
+3. Tall rock (taller than the camera): the width across the view is right; the height shows ">=" and "(back not seen)". That is expected, not a bug.
+4. Two rocks 5-10 cm apart: two objects with two ids.
+5. Push the rover slowly by hand (or drive at `max_linear:=0.05`) toward the objects: the ids must not change, the sizes settle, the distance falls.
+6. Take a rock away while the camera looks at its spot: it disappears within ~1 s. Turn the rover away from an object: it stays in the list, greyed out ("not in view").
+7. Speed: restart with `measure_objects:=false` and compare the frames per second in the detector log. If the Nano is much slower with sizes on, keep them off or raise `pixel_step:=4`.
+
+Colour preview (optional):
+```bash
+# T2: stop the launch (Ctrl+C), then start it again with the preview. Needs python3-opencv (python3 -c "import cv2").
+rosparam delete /quantum_nav 2>/dev/null
+roslaunch arjuna_quantum_nav arena.launch use_map:=false use_preview:=true
+# T4: about 2 images per second.
+rostopic hz /terrain/preview/compressed
+```
+Web page: the **Camera preview** box appears with each object outlined and labelled. Compare the detector's frames per second in its log with and without the preview: they should be about the same.
+
 ## D2. Full arena run with live crater and rock detection (the main test)
 Do this only after C passes (rim visible in the measurement) and D shows craters and rocks correctly.
 Start spot in one corner, goal in the opposite corner, with craters and rocks in between.

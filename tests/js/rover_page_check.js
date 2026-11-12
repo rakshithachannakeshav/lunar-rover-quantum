@@ -14,7 +14,9 @@ const els = {};
 function makeEl(id) {
   const el = {
     id, value: defaults[id] !== undefined ? defaults[id] : "", textContent: "", className: "", hidden: false,
-    innerHTML: "", children: [], style: {}, handlers: {}, disabled: false,
+    _html: "", children: [], style: {}, handlers: {}, disabled: false,
+    // like a browser: replacing the HTML replaces the children
+    set innerHTML(v) { this._html = v; if (v === "") this.children = []; }, get innerHTML() { return this._html; },
     appendChild(c) { this.children.push(c); return c; },
     addEventListener(t, f) { this.handlers[t] = f; },
     setPointerCapture() {},
@@ -105,5 +107,53 @@ check(!msg().hidden && /#2/.test(msg().textContent), "a route point that a new r
 const before = ws.sent.length;
 document.getElementById("send").onclick();
 check(!ws.sent.slice(before).some((m) => m.op === "publish" && m.topic === "/quantum_nav/route"), "the route is not sent while a point is on a rock");
+
+// ---- objects with sizes (/terrain/objects) -------------------------------------------------
+check(subs.indexOf("/terrain/objects") >= 0, "subscribes to /terrain/objects");
+check(subs.indexOf("/terrain/preview/compressed") >= 0, "subscribes to the colour preview");
+const feed = (topic, msg) => ws.onmessage({ data: JSON.stringify({ op: "publish", topic, msg }) });
+const rock = { id: 2, class: "rock", x: 1.2, y: 0.4, yaw: 0, length_m: 0.31, width_m: 0.27, height_m: 0.24,
+  height_is_min: false, footprint_complete: true, size_is_estimate: false, inner_diameter_m: null,
+  outer_diameter_m: null, distance_m: 0.82, centre_distance_m: 0.97, bearing_deg: 3, frames_seen: 9,
+  confidence: 0.9, visible: true, source: "depth",
+  outline: [[1.355, 0.535], [1.045, 0.535], [1.045, 0.265], [1.355, 0.265]] };
+const crater = { id: 1, class: "crater", x: 2.0, y: 1.0, yaw: 0, length_m: 0.34, width_m: 0.34, height_m: 0.02,
+  height_is_min: false, footprint_complete: false, size_is_estimate: false, inner_diameter_m: 0.29,
+  outer_diameter_m: 0.34, distance_m: 1.9, centre_distance_m: 2.07, bearing_deg: 20, frames_seen: 4,
+  confidence: 0.7, visible: false, source: "depth", outline: [[2.17, 1.0], [2.0, 1.17], [1.83, 1.0], [2.0, 0.83]] };
+feed("/terrain/objects", { data: JSON.stringify({ frame_id: "map", stamp: 1, rover: null, objects: [crater, rock] }) });
+const list = () => document.getElementById("objects").children;
+check(list().length === 2, "both objects are listed");
+check(/rock #2/.test(list()[0].innerHTML) && /0\.82 m/.test(list()[0].innerHTML), "nearest object first, with its distance");
+check(/L 31 × W 27 × H 24 cm/.test(list()[0].innerHTML), "rock row shows length, width and height");
+check(/34 cm across, inner 29 cm, rim 2\.0 cm/.test(list()[1].innerHTML), "crater row shows outer / inner diameter and rim height");
+check(/not in view/.test(list()[1].innerHTML) && /gone/.test(list()[1].className), "an object out of view is marked");
+check(window.roverDebug.label(rock) === "rock #2 31×27×24 cm", "map label: class, id and size");
+check(window.roverDebug.label(Object.assign({}, rock, { height_is_min: true })) === "rock #2 31×27×≥24 cm",
+  "a height the camera could not see the top of is shown as a minimum");
+list()[0].onclick();
+check(window.roverDebug.selected() === 2, "clicking a row selects that object");
+check(/sel/.test(list()[0].className), "the selected row is highlighted");
+let drew = true;
+try { window.roverDebug.draw(); } catch (e) { drew = false; console.log(e); }
+check(drew, "objects (with a highlighted one) draw without errors");
+list()[0].onclick();
+check(window.roverDebug.selected() === null, "clicking it again clears the highlight");
+// the selected object disappears from the list: the highlight goes too
+list()[1].onclick();
+feed("/terrain/objects", { data: JSON.stringify({ frame_id: "map", stamp: 2, rover: null, objects: [rock] }) });
+check(window.roverDebug.selected() === null && list().length === 1, "a vanished object loses its highlight");
+
+// robot-frame objects (detector without a pose) are placed with the rover pose
+feed("/robot_pose_ekf/odom_combined", { pose: { pose: { position: { x: 1, y: 1, z: 0 }, orientation: { x: 0, y: 0, z: Math.sin(Math.PI / 4), w: Math.cos(Math.PI / 4) } } } });
+feed("/terrain/objects", { data: JSON.stringify({ frame_id: "base_footprint", stamp: 3, rover: null,
+  objects: [Object.assign({}, rock, { x: 0.5, y: 0.0, outline: [[0.6, 0.1], [0.4, 0.1], [0.4, -0.1], [0.6, -0.1]] })] }) });
+const placed = window.roverDebug.objects()[0];
+check(Math.abs(placed.x - 1.0) < 1e-6 && Math.abs(placed.y - 1.5) < 1e-6, "robot-frame object moved to the map with the pose");
+
+// colour preview
+feed("/terrain/preview/compressed", { format: "jpeg", data: "QUJD" });
+check(document.getElementById("preview").src === "data:image/jpeg;base64,QUJD" &&
+  document.getElementById("preview-box").hidden === false, "preview image is shown");
 
 process.exit(failures ? 1 : 0);

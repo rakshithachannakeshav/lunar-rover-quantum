@@ -12,6 +12,7 @@ catkin_install_python(PROGRAMS
   scripts/crater_detector_node.py
   scripts/crater_core.py
   scripts/terrain_core.py
+  scripts/terrain_objects.py
   scripts/make_arena_map.py
   scripts/compare_runs.py
   scripts/compare_plans.py
