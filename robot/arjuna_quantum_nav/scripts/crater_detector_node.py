@@ -230,6 +230,7 @@ class TerrainNode(object):
         self.obj_pub = rospy.Publisher("/terrain/objects", String, queue_size=1)
         self.obj_marker_pub = rospy.Publisher("/terrain/object_markers", MarkerArray, queue_size=1)
         self.markers_t = 0.0
+        self.markers_key = None
         self.objects_logged = (None, 0.0)
         # optional colour preview with the objects drawn on it (off by default)
         self.use_preview = bool(p("~use_preview", False))
@@ -347,8 +348,10 @@ class TerrainNode(object):
                                            stamp=time.time())
         self.obj_pub.publish(String(data=json.dumps(terrain_objects.objects_message(
             self.objects, frame, time.time(), pose))))
-        if time.time() - self.markers_t >= 0.25:
-            self.markers_t = time.time()
+        # at once when the objects change (new / gone / relabelled), else at most 4 Hz
+        key = tuple((o["id"], o["label"], o["visible"]) for o in self.objects)
+        if key != self.markers_key or time.time() - self.markers_t >= 0.25:
+            self.markers_t, self.markers_key = time.time(), key
             self.obj_marker_pub.publish(self._object_markers(frame))
 
     def _object_markers(self, frame):

@@ -523,8 +523,12 @@ def node_module():
     return rospy, node_mod
 
 
-def test_node_publishes_objects_status_lines_and_rviz_labels(node_module, approach, floor):
+def test_node_publishes_objects_status_lines_and_rviz_labels(node_module, approach, floor,
+                                                             monkeypatch):
     rospy, node_mod = node_module
+    # all frames in the same instant, as on a fast machine: the RViz labels must not depend
+    # on the 4 Hz marker throttle letting a frame through (this failed on CI)
+    monkeypatch.setattr(node_mod.time, "time", lambda: 1000.0)
     node = node_mod.TerrainNode()
     det = tc.TerrainDetector(floor, INTR, PARAMS)
     pose = (1.2, 1.0, 0.0)
