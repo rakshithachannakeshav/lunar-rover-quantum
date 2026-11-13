@@ -61,14 +61,19 @@ def _build():
     ColorRGBA = _msg("ColorRGBA", [("r", f0), ("g", f0), ("b", f0), ("a", f0)])
     Marker = _msg("Marker", [("header", Header), ("ns", lambda: ""), ("id", lambda: 0),
                              ("type", lambda: 0), ("action", lambda: 0), ("pose", Pose),
-                             ("scale", Vector3), ("color", ColorRGBA), ("points", l0)],
-                  dict(ADD=0, DELETEALL=3, CYLINDER=3, CUBE_LIST=6))
+                             ("scale", Vector3), ("color", ColorRGBA), ("points", l0),
+                             ("text", lambda: "")],
+                  dict(ADD=0, DELETEALL=3, CYLINDER=3, CUBE_LIST=6, LINE_STRIP=4,
+                       TEXT_VIEW_FACING=9))
     MarkerArray = _msg("MarkerArray", [("markers", l0)])
+    CompressedImage = _msg("CompressedImage", [("header", Header), ("format", lambda: ""),
+                                               ("data", lambda: b"")])
     return dict(Time=Time, Header=Header, Point=Point, Pose=Pose, PoseStamped=PoseStamped,
                 PoseWithCovarianceStamped=PoseWithCovarianceStamped, Twist=Twist,
                 PoseArray=PoseArray, Path=Path, Odometry=Odometry, OccupancyGrid=OccupancyGrid,
                 Imu=Imu, LaserScan=LaserScan, String=String, Empty=Empty, Float64=Float64,
-                Marker=Marker, MarkerArray=MarkerArray, Quaternion=Quaternion)
+                Marker=Marker, MarkerArray=MarkerArray, Quaternion=Quaternion,
+                CompressedImage=CompressedImage)
 
 
 _clock = [0.0]
@@ -140,7 +145,8 @@ def install():
     pkg("geometry_msgs.msg", Point=m["Point"], PoseArray=m["PoseArray"], PoseStamped=m["PoseStamped"],
         PoseWithCovarianceStamped=m["PoseWithCovarianceStamped"], Twist=m["Twist"], Pose=m["Pose"])
     pkg("nav_msgs.msg", OccupancyGrid=m["OccupancyGrid"], Odometry=m["Odometry"], Path=m["Path"])
-    pkg("sensor_msgs.msg", Imu=m["Imu"], LaserScan=m["LaserScan"])
+    pkg("sensor_msgs.msg", Imu=m["Imu"], LaserScan=m["LaserScan"],
+        CompressedImage=m["CompressedImage"])
     pkg("std_msgs.msg", Empty=m["Empty"], Float64=m["Float64"], String=m["String"])
     pkg("visualization_msgs.msg", Marker=m["Marker"], MarkerArray=m["MarkerArray"])
     rospy.msgs = m

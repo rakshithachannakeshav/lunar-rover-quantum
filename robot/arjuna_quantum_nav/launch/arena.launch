@@ -43,6 +43,9 @@
   <arg name="rate" default="8.0"/>
   <arg name="pixel_step" default="3"/>
   <arg name="frames" default="3"/>
+  <arg name="use_preview" default="false"/>       <!-- true: colour preview with object outlines (web page + /terrain/preview/compressed) -->
+  <arg name="preview_fps" default="2.0"/>
+  <arg name="measure_objects" default="true"/>    <!-- object sizes on /terrain/objects -->
 
   <include file="$(find arjuna_quantum_nav)/launch/crater_detector.launch" if="$(arg use_camera)">
     <arg name="calibrate" value="$(arg calibrate)"/>
@@ -53,6 +56,9 @@
     <arg name="rate" value="$(arg rate)"/>
     <arg name="pixel_step" value="$(arg pixel_step)"/>
     <arg name="frames" value="$(arg frames)"/>
+    <arg name="use_preview" value="$(arg use_preview)"/>
+    <arg name="preview_fps" value="$(arg preview_fps)"/>
+    <arg name="measure_objects" value="$(arg measure_objects)"/>
   </include>
 
   <include file="$(find arjuna_quantum_nav)/launch/quantum_nav.launch">

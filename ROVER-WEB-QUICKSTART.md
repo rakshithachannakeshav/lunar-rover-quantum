@@ -69,13 +69,22 @@ pkill -f Arjuna_camera_pub.py
 roslaunch arjuna_quantum_nav arena.launch use_map:=false use_camera:=true algorithm:=astar max_linear:=0.06
 ```
 - Web bridge (port 9090) starts automatically. `algorithm:=` `astar` | `dijkstra` | `qaoa` | `auto`.
-- `use_camera:=false` means **no crater detection**.
+- `use_camera:=true` detects craters / rocks / walls / table edge with the OAK-D, and measures each (size + id). `use_camera:=false` means **no crater detection**.
+- `use_preview:=true` (with `use_camera:=true`) adds a colour camera view with the objects drawn on it. Needs `python3-opencv` (check: `python3 -c "import cv2"`).
+- `measure_objects:=false` turns the object sizes off if the Jetson is too slow (avoidance works the same).
 - Rover size from the Arjuna curriculum (wheels 0.28-0.30 m apart): `robot_radius` 0.17, `crater_margin` 0.05, so the wheels clear crater rims. On `no path`, lower `crater_margin` a little.
 - Keep a hand on **STOP** (red button / Space) on the first runs.
 - Plain navigator (no camera, no crater detection):
   ```bash
   roslaunch arjuna_quantum_nav quantum_nav.launch use_map:=false laser_yaw_offset_deg:=180 robot_radius:=0.17 crater_margin:=0.05 max_linear:=0.08 web:=true
   ```
+
+**T3 (optional, camera on): what the camera sees**, one line per object:
+```bash
+rostopic echo /terrain/status        # e.g. rock #2: 31 x 27 cm, 24 cm tall, 0.82 m ahead
+rostopic echo -n 1 /terrain/objects  # full details (JSON, metres)
+```
+In RViz, add a MarkerArray display on `/terrain/object_markers` to see the labels.
 
 **T3: find the rover's IP address** for the web page:
 ```bash
@@ -96,6 +105,8 @@ Use the first address, e.g. `10.26.117.143`.
    - **Route** mode: click several points in order → **Send**. It drives through each one.
    - **Undo** removes the last point, **Clear** removes all.
 6. Watch **Rover status** (e.g. `driving astar (waypoint 3/7)`, `goal reached`) and **Last plan** (energy, distance, time per algorithm).
+7. **Objects (camera)** lists every crater, rock, wall and table edge the OAK-D found, with its id, length × width × height and distance. Each one is outlined and labelled on the map, and clicking a row highlights it there. `≥` and "back not seen" mean the camera could not see all of the object yet.
+8. Optional colour view: start the navigator with `use_preview:=true` (needs `python3-opencv`). The **Camera preview** box then shows the camera image with the objects drawn on it.
 
 **STOP:** the red **STOP** button or the **Space** key.
 
@@ -153,3 +164,6 @@ Then start again from section 2.
 | `RESULT_OPERATION_TIMEOUT` (LiDAR) | Another launch is using it: restart ROS (section 5); replug the LiDAR USB |
 | Heading wrong / turns wrong | IMU not calibrated: figure-8 until `/imu/status` is odd |
 | `rosrun` says "No such file" for a script | Windows line endings: run the `sed` line from section 1 |
+| **Objects (camera)** list stays at "waiting for /terrain/objects" | Camera not started (`use_camera:=true`), or `Arjuna_camera_pub.py` still holds the OAK-D: `pkill -f Arjuna_camera_pub.py`, relaunch |
+| A rock shows "≥" height or "back not seen" | Normal for rocks taller than the camera: it cannot see their top or back. Width across the view is still measured |
+| No **Camera preview** box | Start with `use_preview:=true`; check `python3 -c "import cv2"` works and the log has no "Colour preview off" line |

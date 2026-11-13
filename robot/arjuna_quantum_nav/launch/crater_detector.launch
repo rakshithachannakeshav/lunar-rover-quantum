@@ -7,7 +7,11 @@
     roslaunch arjuna_quantum_nav crater_detector.launch calibrate:=true  # rover on FLAT clear floor
     roslaunch arjuna_quantum_nav crater_detector.launch measure:=true    # noise + rim height, then exits
     roslaunch arjuna_quantum_nav crater_detector.launch                  # watch: rostopic echo /terrain/status
+    roslaunch arjuna_quantum_nav crater_detector.launch use_preview:=true  # + colour preview with the objects drawn
 
+  Objects with sizes and stable ids: /terrain/objects (JSON), one line each in /terrain/status,
+  RViz labels on /terrain/object_markers. measure_objects:=false turns the sizes off if the Nano
+  cannot keep up (the planner's /terrain/detections are the same either way).
   Any terrain_core.TerrainParams field can also be set, e.g. rim_min:=0.012 tall_min:=0.06
 -->
 <launch>
@@ -23,6 +27,11 @@
   <arg name="rate" default="8.0"/>              <!-- Hz; lower it if the Nano cannot keep up -->
   <arg name="pixel_step" default="3"/>          <!-- sample every Nth pixel; raise to go faster -->
   <arg name="frames" default="3"/>              <!-- frames fused (2 = faster, noisier) -->
+  <arg name="measure_objects" default="true"/>  <!-- false: no object sizes (saves a little CPU) -->
+  <arg name="map_frame" default="map"/>         <!-- frame of pose_topic = frame of /terrain/objects -->
+  <arg name="use_preview" default="false"/>     <!-- true: colour JPEG preview with objects drawn (needs python3-opencv) -->
+  <arg name="preview_fps" default="2.0"/>       <!-- preview images per second -->
+  <arg name="preview_width" default="480"/>     <!-- px; height = width * 9/16 -->
 
   <node pkg="arjuna_quantum_nav" type="crater_detector_node.py" name="crater_detector" output="screen">
     <param name="calibrate" value="$(arg calibrate)"/>
@@ -37,6 +46,11 @@
     <param name="rate" value="$(arg rate)"/>
     <param name="pixel_step" value="$(arg pixel_step)"/>
     <param name="frames" value="$(arg frames)"/>
+    <param name="measure_objects" value="$(arg measure_objects)"/>
+    <param name="map_frame" value="$(arg map_frame)"/>
+    <param name="use_preview" value="$(arg use_preview)"/>
+    <param name="preview_fps" value="$(arg preview_fps)"/>
+    <param name="preview_width" value="$(arg preview_width)"/>
     <param name="calib_file" value="$(env HOME)/.ros/crater_camera.json"/>
   </node>
 </launch>

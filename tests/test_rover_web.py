@@ -27,8 +27,12 @@ def test_laser_yaw_offset_defaults_to_180():
 
 def test_page_script_has_terrain_and_refusal_hooks():
     js = open(os.path.join(ROOT, 'web', 'js', 'rover_control.js'), encoding='utf-8').read()
-    for needle in ('/terrain', 'objectAt', 'drawTerrain', 'is on a detected'):
+    for needle in ('/terrain', 'objectAt', 'drawTerrain', 'is on a detected',
+                   '/terrain/objects', 'drawObjects', 'selectObject', '/terrain/preview/compressed'):
         assert needle in js
+    html = open(HTML, encoding='utf-8').read()
+    for el in ('id="objects"', 'id="preview"'):
+        assert el in html
 
 
 @pytest.mark.skipif(shutil.which('node') is None, reason='Node.js not installed')
