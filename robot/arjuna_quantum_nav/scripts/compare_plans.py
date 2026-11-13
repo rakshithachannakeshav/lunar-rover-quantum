@@ -54,8 +54,8 @@ def main(argv=None):
     ap.add_argument("--start", type=point, required=True, help="x,y in metres")
     ap.add_argument("--goal", type=point, action="append", required=True,
                     help="x,y in metres; repeat for a route")
-    ap.add_argument("--robot-radius", type=float, default=0.12)
-    ap.add_argument("--margin", type=float, default=0.02)
+    ap.add_argument("--robot-radius", type=float, default=0.17)
+    ap.add_argument("--margin", type=float, default=0.05)
     ap.add_argument("--resolution", type=float, default=0.05)
     ap.add_argument("--elevation", help="height CSV (a hill or ramp), so the energy-aware planners "
                     "can choose a different route from Dijkstra")

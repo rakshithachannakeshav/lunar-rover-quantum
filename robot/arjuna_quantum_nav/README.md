@@ -343,7 +343,7 @@ the remaining path or after a bump. If no path fits, it retries with down to 80%
 clearance and says so in the log.
 
 **Clearances.** Every blocked object is grown by `robot_radius + crater_margin` (default
-0.12 + 0.02 m in `arena.launch`). The arena is small, so set `robot_radius` to half the rover's
+0.17 + 0.05 m in `arena.launch`: the curriculum PDF gives wheel centres 0.28-0.30 m apart and 4 cm wheel radius, so the wheels sit 15 cm either side of the centre and must clear a crater rim, not just the centre). The arena is small, so set `robot_radius` to half the rover's
 **diagonal** and no more. If the planner reports `no path`, run the offline check below with a
 smaller radius, or measure the rover. `soft_margin` (0.10) adds a cost band so paths keep away
 from objects where there is room, without closing gaps.
@@ -360,7 +360,7 @@ point), and make the map:
 ```bash
 rosrun arjuna_quantum_nav make_arena_map.py ~/my_layout.json --out ~/arena_map --preview
 rosrun arjuna_quantum_nav compare_plans.py ~/my_layout.json \
-        --start 0.25,0.25 --goal 1.95,1.95 --robot-radius 0.12 --margin 0.02   # offline, no robot
+        --start 0.25,0.25 --goal 1.95,1.95 --robot-radius 0.17 --margin 0.05   # offline, no robot
 ```
 The map includes the border strip and everything outside the table as blocked. `compare_plans`
 shows planned energy, length, search nodes and planning time per algorithm, and tells you if a
@@ -417,7 +417,7 @@ Checklist section letters (A-K) refer to `docs/ROVER_TEST_CHECKLIST.md`.
 | detector | `x_max`, `half_width` | 1.2, 0.6 m | watched floor |
 | detector | `camera_forward` | 0.10 m | camera ahead of the rover's centre |
 | detector | `frames`, `pixel_step` | 3, 3 | frames fused / sampling; raise `pixel_step` if the Nano is slow |
-| navigator | `robot_radius`, `crater_margin` | 0.12, 0.02 m | clearance round every blocked object |
+| navigator | `robot_radius`, `crater_margin` | 0.17, 0.05 m | clearance round every blocked object |
 | navigator | `bump_pitch_deg`, `bump_roll_deg` | 2.5, 3.0 | IMU jolt that counts as a rim (0 = bump detector off) |
 | navigator | `bump_crater_radius` | 0.20 m | crater size assumed when only a bump marks it |
 | navigator | `confirm_crater/rock/border/nofloor` | 2/2/2/3 | sightings before it blocks |
@@ -444,8 +444,8 @@ rocks) each of Dijkstra, A* and QAOA reached the goal without crossing a rim or 
 - IMU bump size and threshold (depends on wheel size and wheelbase), BNO055 noise, and the
   back-out distance on the real floor.
 - Rover size, speed, turning accuracy and heading drift. In the tests the pose is exact (the
-  simulator can add drift, but the committed tests do not) and the rover is 9 cm in radius with
-  the planner told 10 + 1.5 cm. Wheel odometry that undercounts turns about 3x makes real tracking
+  simulator can add drift, but the committed tests do not) and the rover is 16 cm in radius (PDF: wheel track 0.28-0.30 m, wheel radius 4 cm) with
+  the planner told 17 + 5 cm. Wheel odometry that undercounts turns about 3x makes real tracking
   worse; keep the IMU heading calibrated.
 - Run time on the Jetson Nano: the detector takes about 50 ms per frame on a development PC and will be
   several times slower on the Nano. Lower `rate:=`, raise `pixel_step:=`, or set `frames:=2` (arena.launch and crater_detector.launch take all three).

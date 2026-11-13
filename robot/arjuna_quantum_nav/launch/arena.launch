@@ -23,8 +23,8 @@
   <arg name="arena_size" default="2.21"/>         <!-- m, square table (87 in); ignored with use_map:=true -->
   <arg name="arena_x0" default="0.0"/>            <!-- m: where the arena's origin corner is in the map frame -->
   <arg name="arena_y0" default="0.0"/>
-  <arg name="robot_radius" default="0.12"/>       <!-- m: half the rover's diagonal. SMALLER = fits between obstacles -->
-  <arg name="crater_margin" default="0.02"/>      <!-- m kept clear beyond robot_radius round every object -->
+  <arg name="robot_radius" default="0.17"/>       <!-- m: half the track (wheel centres 0.28-0.30 m apart, curriculum PDF) + wheel half width. The WHEELS must clear a crater rim, not just the centre -->
+  <arg name="crater_margin" default="0.05"/>      <!-- m kept clear beyond robot_radius round every object -->
   <arg name="plan_resolution" default="0.05"/>
   <arg name="max_linear" default="0.10"/>
   <arg name="avoid_obstacles" default="false"/>   <!-- false: stop-and-wait. The reactive swerve has no idea where
