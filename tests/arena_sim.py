@@ -41,19 +41,20 @@ import nav_core  # noqa: E402
 import quantum_nav_node as qn  # noqa: E402
 import terrain_core as tc  # noqa: E402
 
-BODY_R = 0.09            # physical radius of the rover (the planner is told 0.10 + 0.015 margin)
-WHEEL_FWD, WHEEL_SIDE = 0.07, 0.055
+# Arjuna curriculum PDF: wheel radius 0.04 m, wheel centres 0.28-0.30 m apart (odometry code).
+BODY_R = 0.16            # physical radius of the rover: half the track (0.15) + wheel half width
+WHEEL_FWD, WHEEL_SIDE = 0.07, 0.15
 RIM_BUMP = 0.02
-WHEEL_REACH = 0.03       # a wheel (r ~ 3.5 cm) feels a rim while its centre is this close to it
+WHEEL_REACH = 0.04       # a wheel (r = 4 cm) feels a rim while its centre is this close to it
 CAM_LATENCY = 0.1        # s between taking a depth image and the detections reaching the navigator
 SUBSTEPS = 5             # physics + IMU at 50 Hz, the navigator at 10 Hz
 INTR = cc.Intrinsics(fx=450.0, fy=450.0, cx=320.0, cy=200.0, width=640, height=400)
 
 
 # What launch/arena.launch sets (tests/test_arjuna_arena_sim.py checks the two agree), plus the
-# sim's own choices for tolerances. The sim rover is 9 cm in radius; the planner is told 10 + 1.5.
+# sim's own choices for tolerances. The sim rover is 16 cm in radius; the planner is told 17 + 5.
 ARENA_PARAMS = dict(
-    use_map=False, laser_yaw_offset_deg=180.0, robot_radius=0.10, crater_margin=0.015,
+    use_map=False, laser_yaw_offset_deg=180.0, robot_radius=0.17, crater_margin=0.05,
     plan_resolution=0.05, path_spacing=0.15, waypoint_tolerance=0.06, goal_tolerance=0.08,
     max_linear=0.12, max_angular=0.8, avoid_obstacles=False, lidar_stop_distance=0.18,
     soft_margin=0.10, bump_pitch_deg=2.5, wall_margin=0.04, lidar_obstacle_range=3.0,
@@ -89,16 +90,16 @@ def make_node(arena, algorithm, params=None, log_csv=None):
 
 
 def standard_arena(size=2.21):
-    """3 craters (25-30 cm across), 4 rocks (30 cm wide, 22-28 cm tall) in a 2.21 m arena.
-    The positions were found by random search so that routes exist at the planner's
-    clearance (+3 cm to spare) while the straight line start->goal crosses three obstacles."""
-    return aw.Arena(size, craters=[aw.Crater(1.43, 1.78, 0.28, rot_deg=10),
-                                   aw.Crater(1.66, 1.01, 0.25, rot_deg=0),
-                                   aw.Crater(1.05, 0.39, 0.30, rot_deg=22)],
-                    rocks=[aw.Rock(1.24, 1.31, 0.30, 0.30, 0.25, rot_deg=0),
-                           aw.Rock(0.35, 0.66, 0.30, 0.30, 0.22, rot_deg=15),
-                           aw.Rock(0.48, 1.25, 0.30, 0.30, 0.28, rot_deg=20),
-                           aw.Rock(0.95, 1.97, 0.30, 0.30, 0.25, rot_deg=30)])
+    """3 craters (25-30 cm across), 2 rocks (30 cm wide, 22-25 cm tall) in a 2.21 m arena.
+    The rover of the curriculum PDF is 30+ cm wide (wheel centres 0.28-0.30 m apart), so the
+    old 4-rock layout no longer leaves a route at the planner's clearance (17 + 5 cm). These
+    positions were found by a search so every test route exists with padded obstacles at a
+    planner radius of about 0.30 m, while the straight line start->goal crosses obstacles."""
+    return aw.Arena(size, craters=[aw.Crater(1.16, 1.36, 0.28, rot_deg=10),
+                                   aw.Crater(1.24, 0.74, 0.25, rot_deg=0),
+                                   aw.Crater(0.80, 1.05, 0.30, rot_deg=22)],
+                    rocks=[aw.Rock(1.90, 1.43, 0.30, 0.30, 0.25, rot_deg=0),
+                           aw.Rock(1.67, 0.88, 0.30, 0.30, 0.22, rot_deg=15)])
 
 
 class FakeTime(object):

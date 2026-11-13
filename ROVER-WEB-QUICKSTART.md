@@ -52,17 +52,29 @@ rostopic echo -n 1 /robot_pose_ekf/odom_combined
 ```
 The second command must print a pose. If it hangs, send `/initialpose` again.
 
-**T2: start the navigator with the web bridge.** Clear old goals first (ROS remembers them):
+**T2: crater camera check** (first time, and whenever the camera moves). Only one program can open the OAK-D:
+```bash
+pkill -f Arjuna_camera_pub.py
+roslaunch arjuna_quantum_nav crater_detector.launch calibrate:=true   # rover on flat, clear floor; check the printed camera height with a tape
+roslaunch arjuna_quantum_nav crater_detector.launch measure:=true     # once on plain floor, once facing a crater 0.4-0.8 m away; read RESULT
+roslaunch arjuna_quantum_nav crater_detector.launch                   # live check, then in another terminal:
+rostopic echo /terrain/status                                         # should say crater@(x,y) with a crater in view
+```
+If RESULT says *marginal*, add `rim_min:=<suggested> rim_range:=0.7` to the launch below. If it says it *cannot see the rim*, tilt the camera down or lower it.
+
+**T2: start the navigator with the web bridge** (detects craters). Clear old goals first:
 ```bash
 rosparam delete /quantum_nav 2>/dev/null
-roslaunch arjuna_quantum_nav arena.launch use_map:=false use_camera:=false algorithm:=astar
+pkill -f Arjuna_camera_pub.py
+roslaunch arjuna_quantum_nav arena.launch use_map:=false use_camera:=true algorithm:=astar max_linear:=0.06
 ```
-- Web bridge (rosbridge, port 9090) starts automatically.
-- `use_camera:=true` turns on crater/rock detection with the OAK-D (stop `Arjuna_camera_pub.py` first: `pkill -f Arjuna_camera_pub.py`).
-- `algorithm:=` `astar` | `dijkstra` | `qaoa` | `auto`.
-- Without the arena package, the plain navigator works too:
+- Web bridge (port 9090) starts automatically. `algorithm:=` `astar` | `dijkstra` | `qaoa` | `auto`.
+- `use_camera:=false` means **no crater detection**.
+- Rover size from the Arjuna curriculum (wheels 0.28-0.30 m apart): `robot_radius` 0.17, `crater_margin` 0.05, so the wheels clear crater rims. On `no path`, lower `crater_margin` a little.
+- Keep a hand on **STOP** (red button / Space) on the first runs.
+- Plain navigator (no camera, no crater detection):
   ```bash
-  roslaunch arjuna_quantum_nav quantum_nav.launch use_map:=false laser_yaw_offset_deg:=180 robot_radius:=0.15 max_linear:=0.08 web:=true
+  roslaunch arjuna_quantum_nav quantum_nav.launch use_map:=false laser_yaw_offset_deg:=180 robot_radius:=0.17 crater_margin:=0.05 max_linear:=0.08 web:=true
   ```
 
 **T3: find the rover's IP address** for the web page:
@@ -133,6 +145,8 @@ Then start again from section 2.
 | --- | --- |
 | Status `waiting for pose` | Send `/initialpose` again; check `rostopic hz /odom_data_quat` shows ~30 Hz |
 | Status `idle (last: no path)` | Goal too far / on or behind an obstacle / outside the arena. Zoom in and pick open floor |
+| Rover drives onto a crater | Use `use_camera:=true`; check `rostopic echo /terrain/status` shows `crater@...`; redo calibration + `measure:=true`; copy the latest code to the Jetson |
+| `no camera: ...` in status | `pkill -f Arjuna_camera_pub.py`, relaunch, check the OAK-D USB |
 | Rover drives off as soon as the navigator starts | An old goal was remembered: `rosparam delete /quantum_nav`, relaunch |
 | Obstacles shown behind the rover on the page | Laser yaw offset = 180 in Topics and settings, then Disconnect / Connect |
 | **Connect** fails | Same Wi-Fi? T2 still running? Address = `ws://` + `hostname -I` + `:9090` |
