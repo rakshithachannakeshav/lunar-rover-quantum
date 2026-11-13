@@ -97,11 +97,12 @@ lunar-rover-quantum/
 │   ├── navigation_pkg/           # path executor / motor control / velocity publisher
 │   ├── evaluation_pkg/           # battery monitor, energy model, comparison metrics
 │   └── rover_simulation/         # Gazebo world, URDF/Xacro, bridge, launch (ament_cmake)
+├── robot/arjuna_quantum_nav/     # REAL rover (Jetson Nano, ROS Melodic): planners, OAK-D terrain + object sizes
 ├── quantum/notebooks/            # QAOA / Qiskit experiments
 ├── scripts/                      # install, benchmark and plotting scripts
-├── tests/                        # 323 pure-Python unit tests (run in CI, no ROS/Gazebo)
+├── tests/                        # 562 pure-Python unit tests (run in CI, no ROS/Gazebo)
 ├── results/                      # benchmarks: multi_site, ordering_hard, orienteering, paths
-└── web/                          # standalone Three.js rover viewer (no ROS, runs on Windows)
+└── web/                          # Three.js rover viewer (no ROS) + rover.html (drives the real rover)
 ```
 
 ---
@@ -191,7 +192,7 @@ export LIBGL_ALWAYS_SOFTWARE=1     # WSL2 / no GPU; needed in the terminal that 
 ### 0.6 Sanity check (no ROS needed)
 
 ```bash
-python3 -m pytest -q               # 323 passed (5 ROS/Gazebo tests deselected)
+python3 -m pytest -q               # 562 passed (5 ROS/Gazebo tests deselected)
 ros2 pkg prefix mapping_pkg        # must print /home/<you>/lunar-rover-quantum/install/mapping_pkg
 ```
 
@@ -422,7 +423,28 @@ Orbit/Top camera. Standalone — not connected to ROS or Gazebo.
 
 `web/rover.html` is different: it controls the **real Arjuna rover** over rosbridge. You
 click a goal or draw a route, and it shows the live pose, LiDAR and path, with a STOP button.
-See [`robot/arjuna_quantum_nav/README.md`](robot/arjuna_quantum_nav/README.md).
+It also lists every object the rover's camera found, with its size, and outlines it on the map.
+See [`robot/arjuna_quantum_nav/README.md`](robot/arjuna_quantum_nav/README.md) and
+[`ROVER-WEB-QUICKSTART.md`](ROVER-WEB-QUICKSTART.md).
+
+### Real rover: what the OAK-D camera reports (ROS Melodic, `robot/arjuna_quantum_nav`)
+
+`crater_detector_node.py` finds crater rims, rocks, the border wall and the table edge in the
+depth image, and reports each one as an **object** with its size and an id that stays the same
+while the rover drives:
+
+| Topic | Type | Content |
+|---|---|---|
+| `/terrain/detections` | `std_msgs/String` (JSON) | cells to avoid, read by the navigator (unchanged) |
+| `/terrain/objects` | `std_msgs/String` (JSON) | per object: id, class, map x/y, length, width, height, crater inner/outer diameter, distance, confidence |
+| `/terrain/status` | `std_msgs/String` | summary line, then one line per object, e.g. `rock #2: 31 x 27 cm, 24 cm tall, 0.82 m ahead` |
+| `/terrain/object_markers` | `visualization_msgs/MarkerArray` | RViz label and outline per object |
+| `/terrain/preview/compressed` | `sensor_msgs/CompressedImage` | only with `use_preview:=true`: 2 fps colour image with the objects drawn on it |
+
+A size the camera could not fully see (the back of a rock, or a top above the image) is shown
+as "back not seen" or "≥", not as an exact value. Sizes can be switched off with
+`measure_objects:=false`; the navigator's input is the same either way. Rover test steps are in
+[`docs/ROVER_TEST_CHECKLIST.md`](docs/ROVER_TEST_CHECKLIST.md) (section D1).
 
 ---
 

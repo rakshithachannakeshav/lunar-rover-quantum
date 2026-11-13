@@ -59,11 +59,21 @@ roslaunch arjuna_quantum_nav arena.launch use_map:=false use_camera:=false algor
 ```
 - Web bridge (rosbridge, port 9090) starts automatically.
 - `use_camera:=true` turns on crater/rock detection with the OAK-D (stop `Arjuna_camera_pub.py` first: `pkill -f Arjuna_camera_pub.py`).
+  With the camera on, every crater / rock / wall / table edge is also measured (size + id).
+- `use_preview:=true` (with `use_camera:=true`) adds a colour camera view with the objects drawn on it. Needs `python3-opencv` (check: `python3 -c "import cv2"`).
+- `measure_objects:=false` turns the object sizes off if the Jetson is too slow (avoidance works the same).
 - `algorithm:=` `astar` | `dijkstra` | `qaoa` | `auto`.
 - Without the arena package, the plain navigator works too:
   ```bash
   roslaunch arjuna_quantum_nav quantum_nav.launch use_map:=false laser_yaw_offset_deg:=180 robot_radius:=0.15 max_linear:=0.08 web:=true
   ```
+
+**T3 (optional, camera on): what the camera sees**, one line per object:
+```bash
+rostopic echo /terrain/status        # e.g. rock #2: 31 x 27 cm, 24 cm tall, 0.82 m ahead
+rostopic echo -n 1 /terrain/objects  # full details (JSON, metres)
+```
+In RViz, add a MarkerArray display on `/terrain/object_markers` to see the labels.
 
 **T3: find the rover's IP address** for the web page:
 ```bash
@@ -141,3 +151,6 @@ Then start again from section 2.
 | `RESULT_OPERATION_TIMEOUT` (LiDAR) | Another launch is using it: restart ROS (section 5); replug the LiDAR USB |
 | Heading wrong / turns wrong | IMU not calibrated: figure-8 until `/imu/status` is odd |
 | `rosrun` says "No such file" for a script | Windows line endings: run the `sed` line from section 1 |
+| **Objects (camera)** list stays at "waiting for /terrain/objects" | Camera not started (`use_camera:=true`), or `Arjuna_camera_pub.py` still holds the OAK-D: `pkill -f Arjuna_camera_pub.py`, relaunch |
+| A rock shows "≥" height or "back not seen" | Normal for rocks taller than the camera: it cannot see their top or back. Width across the view is still measured |
+| No **Camera preview** box | Start with `use_preview:=true`; check `python3 -c "import cv2"` works and the log has no "Colour preview off" line |
