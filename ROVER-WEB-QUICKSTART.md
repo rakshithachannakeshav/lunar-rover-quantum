@@ -5,8 +5,7 @@ In every Jetson terminal, run first:
 ```bash
 source ~/arjuna_ws/devel/setup.bash
 ```
-T1 / T2 / T3 = Jetson terminals.
-
+T1 / T2 / T3 = Jetson terminals./
 ---
 
 ## 1. One-time setup
