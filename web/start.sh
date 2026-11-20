@@ -10,4 +10,4 @@ if command -v xdg-open >/dev/null 2>&1; then
 elif command -v wslview >/dev/null 2>&1; then
   wslview "http://localhost:8080" 2>/dev/null &
 fi
-exec python3 -m http.server 8080
+exec python3 serve.py 8080

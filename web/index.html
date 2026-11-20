@@ -12,7 +12,7 @@
   <link
     href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Outfit:wght@300;400;500;600&display=swap"
     rel="stylesheet" />
-  <link rel="stylesheet" href="css/style.css" />
+  <link rel="stylesheet" href="css/style.css?v=moon6" />
 </head>
 
 <body>
@@ -71,7 +71,7 @@
         </div>
         <div class="stat-row">
           <dt>Position</dt>
-          <dd id="stat-pos">−3.0, 3.0</dd>
+          <dd id="stat-pos">−18.0, 14.0</dd>
         </div>
         <div class="stat-row">
           <dt>Goal dist.</dt>
@@ -93,7 +93,7 @@
         </div>
         <div class="stat-row">
           <dt>Surface °C</dt>
-          <dd id="stat-temp">−153 °C</dd>
+          <dd id="stat-temp">— °C</dd>
         </div>
         <div class="stat-row">
           <dt>Terrain</dt>
@@ -229,7 +229,39 @@
         <button id="cam-orbit" type="button" class="cam-btn" data-cam="orbit">Orbit</button>
         <button id="cam-top" type="button" class="cam-btn" data-cam="top">Top</button>
       </div>
-      <p class="hint orbit-hint">Orbit: drag · scroll to zoom</p>
+      <p class="hint orbit-hint">Drag the view to look around · scroll to zoom · Chase to follow again</p>
+    </section>
+
+    <!-- ── Lunar environment ─────────────────────────────────── -->
+    <section class="panel moon-panel">
+      <h2>🌙 Lunar Environment</h2>
+      <label class="slider-row">
+        <span>Local time <strong id="env-time">07:12</strong> · <span id="env-phase">Morning</span></span>
+        <input id="env-hour" autocomplete="off" type="range" min="0" max="24" step="0.05" value="7.2" aria-label="Lunar local time" />
+      </label>
+      <p class="hint env-days" id="env-earthdays">—</p>
+      <div class="cam-btns env-presets" role="group" aria-label="Time of lunar day">
+        <button type="button" class="cam-btn env-preset" data-hour="6.4">Dawn</button>
+        <button type="button" class="cam-btn env-preset" data-hour="12">Noon</button>
+        <button type="button" class="cam-btn env-preset" data-hour="17.6">Dusk</button>
+        <button type="button" class="cam-btn env-preset" data-hour="0">Night</button>
+      </div>
+      <button type="button" id="btn-timelapse" class="cam-btn env-timelapse">▶ Time-lapse lunar day</button>
+      <dl class="stats env-stats">
+        <div class="stat-row"><dt>Sun elevation</dt><dd id="env-sun" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Rover is</dt><dd id="env-light" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Surface temp</dt><dd id="env-temp" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Solar input</dt><dd id="env-solar" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Heaters</dt><dd id="env-heater" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Headlights</dt><dd id="env-lights" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Radiation</dt><dd id="env-rad" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Dose so far</dt><dd id="env-dose" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Atmosphere</dt><dd class="mono-val sensor-val">3×10⁻¹⁵ atm</dd></div>
+        <div class="stat-row"><dt>Gravity</dt><dd class="mono-val sensor-val">1.62 m/s²</dd></div>
+        <div class="stat-row"><dt>Earth link</dt><dd class="mono-val sensor-val">1.28 s one-way</dd></div>
+      </dl>
+      <p class="hint env-note">Vacuum: no air drag on dust, no sky glow, hard black shadows.
+        One lunar day ≈ 29.5 Earth days (≈ 14 days of light, 14 of night).</p>
     </section>
 
     <section class="panel terrain-panel">
@@ -243,6 +275,7 @@
       </div>
       <p class="hint" id="terrain-desc">Gentle undulation only — the baseline.</p>
       <p class="hint">Uphill costs more, gentle downhill less; &gt; 25° is impassable. Switching resets the rover to spawn.</p>
+      <button type="button" id="btn-overlay" class="bench-btn">Slope overlay: ON</button>
       <button type="button" id="btn-benchmark" class="bench-btn">Benchmark all terrains</button>
     </section>
 
@@ -263,6 +296,7 @@
         <div class="stat-row"><dt>Pitch</dt><dd id="sens-imu-pitch" class="mono-val sensor-val">—°</dd></div>
         <div class="stat-row"><dt>Accel X</dt><dd id="sens-imu-ax" class="mono-val sensor-val">—</dd></div>
         <div class="stat-row"><dt>Accel Z</dt><dd id="sens-imu-az" class="mono-val sensor-val">—</dd></div>
+        <div class="stat-row"><dt>Wheel slip</dt><dd id="sens-slip" class="mono-val sensor-val">—</dd></div>
       </dl>
     </section>
 
@@ -275,6 +309,7 @@
         <div class="stat-row"><dt>Distance</dt><dd id="sens-odom-dist" class="mono-val sensor-val">— m</dd></div>
         <div class="stat-row"><dt>Climb ↑</dt><dd id="sens-odom-climb" class="mono-val sensor-val">— m</dd></div>
         <div class="stat-row"><dt>Descent ↓</dt><dd id="sens-odom-desc" class="mono-val sensor-val">— m</dd></div>
+        <div class="stat-row"><dt>Drift (slip)</dt><dd id="sens-odom-err" class="mono-val sensor-val">— m</dd></div>
       </dl>
     </section>
 
@@ -285,6 +320,8 @@
         <div class="stat-row"><dt>Current</dt><dd id="sens-current" class="mono-val sensor-val">— A</dd></div>
         <div class="stat-row"><dt>Gravity</dt><dd id="sens-grav-power" class="mono-val sensor-val">— W</dd></div>
         <div class="stat-row"><dt>Used</dt><dd id="sens-consumed" class="mono-val sensor-val">— kJ</dd></div>
+        <div class="stat-row"><dt>Solar</dt><dd id="sens-solar" class="mono-val sensor-val">— W</dd></div>
+        <div class="stat-row"><dt>Net</dt><dd id="sens-net" class="mono-val sensor-val">— W</dd></div>
       </dl>
     </section>
 
@@ -337,7 +374,7 @@
         </div>
         <div class="legend-row">
           <span class="legend-swatch" style="background:#c9893f;"></span>
-          <span>Steep ground (tinted by slope)</span>
+          <span>Steep ground (slope overlay)</span>
         </div>
         <div class="legend-row">
           <span class="legend-swatch" style="background:#a8443a;"></span>
@@ -356,8 +393,8 @@
   </footer>
 
   <script src="lib/three.min.js"></script>
-  <script src="js/qaoa.js"></script>
-  <script src="js/sim.js"></script>
+  <script src="js/qaoa.js?v=moon6"></script>
+  <script src="js/sim.js?v=moon6"></script>
   <script>
     // Speed slider label
     var sl = document.getElementById("speed-slider");
