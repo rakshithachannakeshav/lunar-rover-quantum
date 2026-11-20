@@ -415,11 +415,22 @@ ros2 launch rover_simulation demo.launch.py mode:=creep use_rviz:=true
 ### Web viewer (no Linux/ROS needed)
 
 ```bash
-cd web && python -m http.server 8080     # open http://localhost:8080/index.html
+cd web && python serve.py 8080          # open http://localhost:8080/index.html (no-cache server)
 ```
 
 Three.js preview: rover model, rocks, terrain, drive with WASD, Patrol AI tab,
 Orbit/Top camera. Standalone — not connected to ROS or Gazebo.
+
+Lunar conditions are modelled too. The **Lunar Environment** panel sets the
+local time of the lunar day (or runs a time-lapse). The sun position then
+drives the hard shadows, the surface temperature (about +110 °C at noon,
+−170 °C at night), the solar-panel power and battery, the survival heaters
+and the headlights. The panel also shows the radiation dose rate and Earth's
+phase in the sky. The scene has no atmosphere, so there is no fog or sky glow,
+and the dust kicked up by the wheels flies in clean ballistic arcs at 1/6 g.
+Wheels slip in loose regolith, so odometry drifts from the true position.
+The visible ground adds small craters and distant mountains, but the planners
+still use the planning elevation map, so the benchmark numbers are unchanged.
 
 `web/rover.html` is different: it controls the **real Arjuna rover** over rosbridge. You
 click a goal or draw a route, and it shows the live pose, LiDAR and path, with a STOP button.

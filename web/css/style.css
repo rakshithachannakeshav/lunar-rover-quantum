@@ -52,6 +52,12 @@ body {
   inset: 0;
   z-index: 0;
   pointer-events: auto;
+  touch-action: none;   /* drags rotate the view instead of scrolling */
+  cursor: grab;
+}
+
+#canvas-wrap:active {
+  cursor: grabbing;
 }
 
 #canvas-wrap canvas {
@@ -941,4 +947,52 @@ dd.goal-dd {
   text-align: center;
   font-size: 0.72rem;
   color: var(--text);
+}
+
+/* ── Lunar environment panel ─────────────────────────────────────── */
+.moon-panel {
+  border-color: rgba(147, 197, 253, 0.2);
+}
+
+.moon-panel .slider-row {
+  margin-bottom: 0.3rem;
+}
+
+.env-days {
+  margin-bottom: 0.5rem;
+}
+
+.env-presets {
+  margin-bottom: 0.4rem;
+}
+
+.env-presets .cam-btn {
+  min-width: 0;
+  padding: 0.3rem 0.2rem;
+}
+
+.env-timelapse {
+  width: 100%;
+  margin-bottom: 0.7rem;
+}
+
+.env-note {
+  margin: 0.6rem 0 0;
+  line-height: 1.4;
+}
+
+.env-sunlit {
+  color: #fde68a !important;
+}
+
+.env-dark {
+  color: #93c5fd !important;
+}
+
+.env-hot {
+  color: #fb923c !important;
+}
+
+.env-cold {
+  color: #7dd3fc !important;
 }
