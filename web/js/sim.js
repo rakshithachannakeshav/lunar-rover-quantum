@@ -10,8 +10,10 @@
   // spawn and goal sit ~48 m apart across the map
   var START_X = -18, START_Z = 14;
   var GOAL_X = 20, GOAL_Z = -16;
+  // Patrol AI: survey these points in order, then finish at the goal and stop.
+  // It uses only local obstacle avoidance (no global planner).
   var PATROL_WPS = [
-    [10, 0], [20, -10], [15, -20], [0, -15], [-10, -5], [0, 10], [10, 0]
+    [0, 10], [10, 0], [0, -15], [15, -20]
   ];
 
   // rocks: [x, z, scaleX, scaleY, scaleZ]
@@ -75,6 +77,19 @@
   var maxSpeed = 0.5;
   var camMode = "chase";
   var patrolIdx = 0;
+  var patrolDone = false;
+  var patrolRoute = null;     // PATROL_WPS (moved clear of rocks) + the goal
+  // stuck recovery: if no progress toward the current waypoint for a while,
+  // re-plan a detour to it with A* (e.g. around a ridge too steep to climb)
+  var patrolDetour = null, patrolDetourIdx = 0;
+  var patrolClock = 0, patrolBest = Infinity, patrolBestT = 0;
+  var PATROL_STUCK_S = 4;
+  var patrolDetourDrawn = false;
+  function resetPatrol() {
+    patrolIdx = 0; patrolDone = false; patrolDetour = null;
+    patrolBest = Infinity; patrolBestT = patrolClock;
+    if (patrolDetourDrawn) { drawPath(null, 0, "astar"); patrolDetourDrawn = false; }
+  }
 
   // rover 2D world coords (x, z in THREE space)
   var rv = {
@@ -1158,13 +1173,13 @@
       document.querySelectorAll(".tab").forEach(function (t) { t.classList.remove("active"); });
       tab.classList.add("active");
       mode = tab.dataset.mode;
-      patrolIdx = 0;
+      resetPatrol();
       navPath = null;
       navPathIdx = 0;
       lastComputedMode = null;
       if (elStatus) {
         if (mode === "patrol") {
-          elStatus.textContent = "Patrol AI — obstacle-aware waypoint navigation";
+          elStatus.textContent = "Patrol AI — surveys " + PATROL_WPS.length + " waypoints with local obstacle avoidance, then stops at the goal";
         } else if (mode === "astar") {
           elStatus.textContent = "A* — computing optimal path to goal...";
         } else if (mode === "dijkstra") {
@@ -1433,7 +1448,7 @@
     enc.prevH = rv.wy;
     sensors.energy.consumedJ = 0;
     sensors.energy.batteryJ = sensors.energy.capacityWh * 3600;
-    patrolIdx = 0;
+    resetPatrol();
     clearTracks();
 
     document.querySelectorAll(".terrain-btn").forEach(function (b) {
@@ -1637,6 +1652,25 @@
 
   var slopeBlocked = false;
 
+  // nearest spot to (x, z) that is outside every rock's keep-out zone
+  function freeSpot(x, z) {
+    if (!checkCollision(x, z).hit) return [x, z];
+    for (var r = 0.5; r <= 6; r += 0.5) {
+      for (var a = 0; a < 16; a++) {
+        var px = x + Math.cos(a / 16 * Math.PI * 2) * r, pz = z + Math.sin(a / 16 * Math.PI * 2) * r;
+        if (!checkCollision(px, pz).hit) return [px, pz];
+      }
+    }
+    return [x, z];
+  }
+  function getPatrolRoute() {
+    if (!patrolRoute) {
+      patrolRoute = PATROL_WPS.map(function (p) { return freeSpot(p[0], p[1]); });
+      patrolRoute.push([GOAL_X, GOAL_Z]);
+    }
+    return patrolRoute;
+  }
+
   function drive(dt) {
     var oldX = rv.wx, oldZ = rv.wz;
     var hg = headingGrade();
@@ -1673,20 +1707,69 @@
         advance(dt);
       }
     } else if (mode === "patrol") {
-      if (patrolIdx >= PATROL_WPS.length) patrolIdx = 0;
-      var wp = PATROL_WPS[patrolIdx];
-      var dx = wp[0] - rv.wx, dz = wp[1] - rv.wz;
-      var dist = Math.sqrt(dx * dx + dz * dz);
-      if (dist < 0.5) { patrolIdx++; return; }
+      var route = getPatrolRoute();
+      if (patrolDone || patrolIdx >= route.length) {
+        // route finished: hold position at the goal
+        patrolDone = true;
+        rv.speed += (0 - rv.speed) * Math.min(1, dt * 4);
+        rv.turn += (0 - rv.turn) * Math.min(1, dt * 6);
+        advance(dt);
+        if (elStatus) elStatus.textContent = "🎯 Patrol complete — rover stopped at the goal. Click Patrol AI to run it again.";
+        return;
+      }
+      var wp = route[patrolIdx];
+      var isGoal = patrolIdx === route.length - 1;
+      var wdx = wp[0] - rv.wx, wdz = wp[1] - rv.wz;
+      var wdist = Math.sqrt(wdx * wdx + wdz * wdz);
+      if (wdist < (isGoal ? 0.8 : 0.5)) {
+        patrolIdx++; patrolDetour = null; patrolBest = Infinity; patrolBestT = patrolClock;
+        return;
+      }
+
+      // progress watchdog → A* detour when stuck
+      patrolClock += dt;
+      if (wdist < patrolBest - 0.3) { patrolBest = wdist; patrolBestT = patrolClock; }
+      var label = isGoal ? "heading to the goal" : "waypoint " + (patrolIdx + 1) + "/" + (route.length - 1);
+      if (!patrolDetour && patrolClock - patrolBestT > PATROL_STUCK_S) {
+        var detour = astarPath(rv.wx, rv.wz, wp[0], wp[1]);
+        patrolBest = wdist; patrolBestT = patrolClock;
+        if (detour && detour.length > 1) {
+          detour[detour.length - 1] = [wp[0], wp[1]];   // A* snaps to its grid; end exactly on the waypoint
+          patrolDetour = detour; patrolDetourIdx = 1;
+          patrolDetourDrawn = true;
+          drawPath(detour, 0x60a5fa, "astar");
+        } else if (!isGoal) {
+          patrolIdx++;   // unreachable waypoint: skip it rather than stall
+          if (elStatus) elStatus.textContent = "Patrol AI — waypoint unreachable, skipping it";
+          return;
+        }
+      }
+
+      // target: next detour point if re-planning, otherwise the waypoint itself
+      var tgt = wp;
+      if (patrolDetour) {
+        while (patrolDetourIdx < patrolDetour.length - 1 &&
+               Math.hypot(patrolDetour[patrolDetourIdx][0] - rv.wx, patrolDetour[patrolDetourIdx][1] - rv.wz) < 0.4) {
+          patrolDetourIdx++;
+        }
+        tgt = patrolDetour[patrolDetourIdx];
+      }
+      var dx = tgt[0] - rv.wx, dz = tgt[1] - rv.wz;
+      var dist = patrolDetour ? Math.max(wdist, 0.8) : wdist;   // keep speed up between detour points
+      if (elStatus) {
+        elStatus.textContent = "Patrol AI — " + label + " (" + wdist.toFixed(1) + " m)" +
+          (patrolDetour ? " · blocked, following A* detour" : isGoal ? "" : ", then the goal");
+      }
 
       // local obstacle avoidance during patrol
       var targetYaw = Math.atan2(dx, dz);
 
       // check if an obstacle is in the direct path — steer around it
+      // (not needed on an A* detour, which is already planned clear of rocks)
       var lookDist = 2.5;
       var lookX = rv.wx + Math.sin(targetYaw) * lookDist;
       var lookZ = rv.wz + Math.cos(targetYaw) * lookDist;
-      var lookCol = checkCollision(lookX, lookZ);
+      var lookCol = patrolDetour ? { hit: false } : checkCollision(lookX, lookZ);
       if (lookCol.hit) {
         // steer away: offset target yaw by ±45° away from obstacle
         var obsDx = lookCol.obstacle.x - rv.wx;
@@ -2341,7 +2424,7 @@
     }
 
     // goal reached
-    if (gdist < 1.2 && elStatus) {
+    if (gdist < 1.2 && elStatus && mode !== "patrol") {   // patrol writes its own status
       elStatus.textContent = "🎯 Goal reached! Drive to explore further.";
     }
 
